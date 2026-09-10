@@ -47,16 +47,17 @@ const resolveSiteRef = async (actor, { siteId, siteName }) => {
     return { id: site._id.toString(), name: site.siteLocationName, timezone: site.timezone || null, status: site.status };
   }
   if (siteName) return resolveSite(actor, siteName);
-  throw invalidInput('Which site? Give a site name.');
+  throw invalidInput('Which site should the shift be at?', { missing: ['siteName'] });
 };
 
 /** Everything both phases need. Run again at commit, deliberately. */
 const build = async (actor, input) => {
-  if (!input.date) throw invalidInput('Which date should the shift be on?');
-  if (!input.start) throw invalidInput('What time does the shift start?');
+  if (!input.date) throw invalidInput('Which date should the shift be on?', { missing: ['date'] });
+  if (!input.start) throw invalidInput('What time does the shift start?', { missing: ['start'] });
   if (!input.end) {
     throw invalidInput(
-      'What time does the shift finish? There is no default shift length configured, so an end time is required.'
+      'What time does the shift finish? There is no default shift length, so an end time is required.',
+      { missing: ['end'] }
     );
   }
 

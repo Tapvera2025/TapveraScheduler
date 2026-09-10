@@ -189,7 +189,7 @@ const resolveEmployeeRef = async (actor, { employeeId, employeeName }) => {
 
   if (employeeName) return resolveEmployee(actor, employeeName);
 
-  throw invalidInput('Which employee? Give a name.');
+  throw invalidInput('Which employee? Give a name.', { missing: ['employeeName'] });
 };
 
 /**

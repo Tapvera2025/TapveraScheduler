@@ -47,7 +47,7 @@ const fetchShiftById = async (actor, shiftId) => {
 const fetchShiftByEmployeeDate = async (actor, input) => {
   const employee = await resolveEmployeeRef(actor, input);
   if (!input.date || !/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
-    throw invalidInput('Which date is the shift on? Use YYYY-MM-DD.');
+    throw invalidInput('Which date is the shift on?', { missing: ['date'] });
   }
   const { timezone } = await getCompanyProfile(actor.companyId);
   const dayStart = DateTime.fromFormat(input.date, 'yyyy-MM-dd', { zone: timezone }).startOf('day');

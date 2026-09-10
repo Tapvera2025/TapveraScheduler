@@ -235,9 +235,27 @@ export default function useAgent() {
         }
       } catch (err) {
         const e = readError(err);
-        setError(e);
-        setPhase(PHASES.IDLE);
-        appendMessage({ type: "error", message: e.message, details: e.details });
+        // INVALID_INPUT and NOT_FOUND always require the user to say something next —
+        // show them as conversational assistant bubbles, not red errors.
+        // AMBIGUOUS_ENTITY and CONFLICT keep the error path because they render
+        // interactive candidate / conflict lists in the UI.
+        if (['INVALID_INPUT', 'NOT_FOUND'].includes(e.code)) {
+          setAssistantMessage(e.message);
+          appendMessage({ type: "assistant", content: e.message });
+          setHistory((prev) =>
+            [
+              ...prev,
+              { role: "user", content: message },
+              { role: "assistant", content: e.message },
+            ].slice(-6)
+          );
+          setError(null);
+          setPhase(PHASES.IDLE);
+        } else {
+          setError(e);
+          setPhase(PHASES.IDLE);
+          appendMessage({ type: "error", message: e.message, details: e.details });
+        }
       } finally {
         setPlanning(false);
       }
