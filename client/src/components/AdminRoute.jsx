@@ -15,9 +15,14 @@ export default function AdminRoute({ children }) {
     return <Navigate to="/login" replace />;
   }
 
+  // Master admins belong in the platform panel, not an organisation's app
+  if (userRole === "master") {
+    return <Navigate to="/master" replace />;
+  }
+
   // If authenticated but not admin/manager, redirect to employee portal
   if (userRole === "user") {
-    return <Navigate to="/user/roster" replace />;
+    return <Navigate to="/user" replace />;
   }
 
   // User is authenticated and has admin/manager role

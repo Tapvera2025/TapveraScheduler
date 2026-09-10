@@ -7,7 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const geocodingService = require('../services/geocoding.service');
-const { auth } = require('../middleware/auth');
+const { auth, authorize } = require('../middleware/auth');
 
 /**
  * @route   GET /api/geocoding/search
@@ -91,19 +91,11 @@ router.get('/reverse', auth, async (req, res) => {
 
 /**
  * @route   POST /api/geocoding/cache/clear
- * @desc    Clear geocoding cache (admin only)
- * @access  Private
+ * @desc    Clear geocoding cache
+ * @access  Private (ADMIN only)
  */
-router.post('/cache/clear', auth, async (req, res) => {
+router.post('/cache/clear', auth, authorize('ADMIN'), async (req, res) => {
   try {
-    // TODO: Add admin role check if needed
-    // if (req.user.role !== 'ADMIN') {
-    //   return res.status(403).json({
-    //     success: false,
-    //     message: 'Access denied',
-    //   });
-    // }
-
     geocodingService.clearCache();
 
     res.json({
@@ -121,19 +113,11 @@ router.post('/cache/clear', auth, async (req, res) => {
 
 /**
  * @route   GET /api/geocoding/cache/stats
- * @desc    Get cache statistics (admin only)
- * @access  Private
+ * @desc    Get cache statistics
+ * @access  Private (ADMIN only)
  */
-router.get('/cache/stats', auth, async (req, res) => {
+router.get('/cache/stats', auth, authorize('ADMIN'), async (req, res) => {
   try {
-    // TODO: Add admin role check if needed
-    // if (req.user.role !== 'ADMIN') {
-    //   return res.status(403).json({
-    //     success: false,
-    //     message: 'Access denied',
-    //   });
-    // }
-
     const stats = geocodingService.getCacheStats();
 
     res.json({

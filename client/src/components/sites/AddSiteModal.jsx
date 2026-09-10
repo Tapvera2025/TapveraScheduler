@@ -1,18 +1,13 @@
-import { useState, useRef, useEffect } from "react";
+import Modal from "../ui/Modal";
+import { useState, useEffect } from "react";
 import {
   X,
   MapPin,
   Save,
-  ChevronDown,
   Users,
   Key,
   Info,
   Target,
-  Plus,
-  RotateCw,
-  Eye,
-  EyeOff,
-  ChevronUp,
   AlertTriangle,
   Loader2,
 } from "lucide-react";
@@ -21,10 +16,12 @@ import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { LocationAutocomplete } from "../ui/LocationAutocomplete";
+import { StateInput } from "../ui/StateInput";
 import { siteApi, clientApi, geocodingApi } from "../../lib/api";
 import staticClients from "../../data/clients";
 import MapModal from "./MapModal";
-import { AUSTRALIAN_STATES, AUSTRALIAN_TIMEZONES } from "../../constants/locations";
+import AccessCodesManager from "./AccessCodesManager";
+import { STATE_GROUPS, INDIAN_STATES, SUPPORTED_TIMEZONES } from "../../constants/locations";
 
 export default function AddSiteModal({ onClose, onSuccess, site = null }) {
   const [activeTab, setActiveTab] = useState("address");
@@ -32,13 +29,6 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
   const [geoFenceRadius, setGeoFenceRadius] = useState(
     site?.geoFenceRadius ? site.geoFenceRadius / 1000 : 0.3,
   );
-  const [accessCodeExpanded, setAccessCodeExpanded] = useState(true);
-  const [showAccessCode, setShowAccessCode] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const modalRef = useRef(null);
-
   // API state
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
@@ -49,15 +39,6 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
   const [warningMessage, setWarningMessage] = useState("");
   const [showMapModal, setShowMapModal] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
-
-  const [accessCodeData, setAccessCodeData] = useState({
-    codeName: "",
-    accessCode: "",
-    notes: "",
-    visibleOnMobile: "no",
-    whenRostered: "no",
-    afterClockingIn: "no",
-  });
 
   const [formData, setFormData] = useState({
     siteLocationName: site?.siteLocationName || "",
@@ -71,13 +52,8 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
           : "Active",
     client: site?.client || "",
     flatBillingRate: site?.flatBillingRate || "",
-    alertRecipient: site?.alertRecipient || "",
     exportId: site?.exportId || "",
     region: site?.region || "",
-    remindEmployees: site?.remindEmployees || "2 hours before",
-    defaultStartTime: site?.defaultStartTime || "",
-    defaultEndTime: site?.defaultEndTime || "",
-    defaultShiftDuration: site?.defaultShiftDuration || "",
     address: site?.address || "",
     state: site?.state || "",
     townSuburb: site?.townSuburb || "",
@@ -85,6 +61,12 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
     timezone: site?.timezone || "Australia/Sydney",
     latitude: site?.latitude || "",
     longitude: site?.longitude || "",
+    contactPerson: site?.contactPerson || "",
+    contactPosition: site?.contactPosition || "",
+    contactPhone: site?.contactPhone || "",
+    contactMobile: site?.contactMobile || "",
+    contactEmail: site?.contactEmail || "",
+    contactNotes: site?.contactNotes || "",
   });
 
   // Fetch clients on mount
@@ -116,6 +98,90 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
     setShowWarning(true);
   };
 
+  // Push a geocoded result (from forward-search OR reverse from geolocation)
+  // into the form fields. Same mapping used by both entry points, so the
+  // resulting UX is identical whether the user typed an address or let the
+  // browser share their location.
+  //
+  // `displayName` is optional — used as fallback for Address when Nominatim
+  // returns empty road/street (e.g. locality-level matches inside business
+  // parks like "GP Block, Sector V, Bidhannagar…").
+  const applyGeocodeResult = (lat, lon, address, displayName) => {
+    const mapStateToCode = (stateName) => {
+      if (!stateName) return "";
+      const needle = String(stateName).toLowerCase();
+      for (const group of STATE_GROUPS) {
+        const byName = group.options.find((s) => s.name.toLowerCase() === needle);
+        if (byName) return byName.code;
+        const byCode = group.options.find((s) => s.code.toLowerCase() === needle);
+        if (byCode) return byCode.code;
+      }
+      return stateName;
+    };
+
+    handleInputChange("latitude", parseFloat(lat).toFixed(6));
+    handleInputChange("longitude", parseFloat(lon).toFixed(6));
+
+    if (!address) return;
+
+    const suburbValue =
+      address.suburb || address.town || address.city || "";
+    const roadValue = (address.road || address.street || "").trim();
+
+    // Address fallback: if Nominatim didn't return a road, use the first
+    // display_name segment that isn't the same as the suburb. Keeps the
+    // input from being blank on locality-level hits.
+    let addressToSet = roadValue;
+    if (!addressToSet && displayName) {
+      const parts = String(displayName)
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean);
+      const firstMeaningful = parts.find(
+        (p) => p.toLowerCase() !== suburbValue.toLowerCase(),
+      );
+      if (firstMeaningful) addressToSet = firstMeaningful;
+    }
+    if (addressToSet) {
+      handleInputChange("address", addressToSet);
+    }
+
+    if (suburbValue) {
+      handleInputChange("townSuburb", suburbValue);
+    }
+    if (address.state) {
+      const stateCode = mapStateToCode(address.state);
+      handleInputChange("state", stateCode);
+
+      // AU state → AU zone; Indian state (by code OR name) → IST.
+      const timezoneMap = {
+        NSW: 'Australia/Sydney',
+        VIC: 'Australia/Melbourne',
+        QLD: 'Australia/Brisbane',
+        SA: 'Australia/Adelaide',
+        WA: 'Australia/Perth',
+        TAS: 'Australia/Hobart',
+        NT: 'Australia/Darwin',
+        ACT: 'Australia/Canberra',
+      };
+      const isIndianState = (s) => {
+        if (!s) return false;
+        const needle = String(s).toLowerCase();
+        return INDIAN_STATES.some(
+          (i) => i.code.toLowerCase() === needle || i.name.toLowerCase() === needle,
+        );
+      };
+      if (stateCode && timezoneMap[stateCode]) {
+        handleInputChange("timezone", timezoneMap[stateCode]);
+      } else if (isIndianState(stateCode)) {
+        handleInputChange("timezone", 'Asia/Kolkata');
+      }
+    }
+    if (address.postcode) {
+      handleInputChange("postalCode", address.postcode);
+    }
+  };
+
   const handleGetMapAddress = async () => {
     const addressParts = [
       formData.address,
@@ -126,81 +192,88 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
       .filter(Boolean)
       .join(", ");
 
+    // No address typed → use the browser's geolocation and reverse-geocode.
+    // This matches the intuitive read of the button label ("get my map address").
     if (!addressParts.trim()) {
-      showWarningDialog("Please enter site address");
+      if (!navigator.geolocation) {
+        showWarningDialog(
+          "Your browser does not support geolocation. Please type an address instead.",
+        );
+        return;
+      }
+
+      // Some browsers (particularly mobile with intermittent GPS) will fire
+      // the success callback with a cached fix and then still fire the error
+      // callback when the high-accuracy fetch times out. Guard both so only
+      // whichever arrives first actually runs.
+      let settled = false;
+      setGeocoding(true);
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          if (settled) return;
+          settled = true;
+          try {
+            const { latitude, longitude } = position.coords;
+            const response = await geocodingApi.reverse(latitude, longitude);
+            const result = response.data?.data;
+            if (!result) {
+              showWarningDialog(
+                "Could not resolve your current location to an address. Try typing the address instead.",
+              );
+              return;
+            }
+            applyGeocodeResult(latitude, longitude, result.address, result.display_name);
+            toast.success("Filled from your current location");
+          } catch (error) {
+            console.error("Reverse geocoding error:", error);
+            showWarningDialog(
+              error.response?.data?.message ||
+                "Failed to resolve your current location. Please try again.",
+            );
+          } finally {
+            setGeocoding(false);
+          }
+        },
+        (error) => {
+          if (settled) return;
+          settled = true;
+          setGeocoding(false);
+          let msg = "Failed to get your location";
+          if (error.code === error.PERMISSION_DENIED) {
+            msg = "Location permission denied. Enable it or type the address instead.";
+          } else if (error.code === error.POSITION_UNAVAILABLE) {
+            msg = "Location information unavailable";
+          } else if (error.code === error.TIMEOUT) {
+            msg = "Location request timed out";
+          }
+          showWarningDialog(msg);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+      );
       return;
     }
 
+    // Address typed → forward-geocode and apply the top result.
     setGeocoding(true);
     try {
-      const response = await geocodingApi.search(addressParts, "au", 1);
+      // No country filter — the app supports both AU and IN (and Nominatim
+      // covers everywhere else too if a user types a foreign address).
+      const response = await geocodingApi.search(addressParts, "", 1);
       const data = response.data.data || [];
 
       if (data && data.length > 0) {
         const result = data[0];
-        const { lat, lon, address } = result;
-
-        // Helper function to map full state name to abbreviation
-        const mapStateToCode = (stateName) => {
-          if (!stateName) return "";
-          const state = AUSTRALIAN_STATES.find(
-            (s) => s.name.toLowerCase() === stateName.toLowerCase()
-          );
-          if (state) return state.code;
-          const stateByCode = AUSTRALIAN_STATES.find(
-            (s) => s.code.toLowerCase() === stateName.toLowerCase()
-          );
-          return stateByCode ? stateByCode.code : stateName;
-        };
-
-        handleInputChange("latitude", parseFloat(lat).toFixed(6));
-        handleInputChange("longitude", parseFloat(lon).toFixed(6));
-
-        // Also update address fields if available
-        if (address) {
-          if (address.road || address.street) {
-            handleInputChange("address", address.road || address.street);
-          }
-          if (address.suburb || address.town || address.city) {
-            handleInputChange(
-              "townSuburb",
-              address.suburb || address.town || address.city
-            );
-          }
-          if (address.state) {
-            const stateCode = mapStateToCode(address.state);
-            handleInputChange("state", stateCode);
-
-            // Auto-select timezone based on state
-            const timezoneMap = {
-              'NSW': 'Australia/Sydney',
-              'VIC': 'Australia/Melbourne',
-              'QLD': 'Australia/Brisbane',
-              'SA': 'Australia/Adelaide',
-              'WA': 'Australia/Perth',
-              'TAS': 'Australia/Hobart',
-              'NT': 'Australia/Darwin',
-              'ACT': 'Australia/Canberra',
-            };
-            if (stateCode && timezoneMap[stateCode]) {
-              handleInputChange("timezone", timezoneMap[stateCode]);
-            }
-          }
-          if (address.postcode) {
-            handleInputChange("postalCode", address.postcode);
-          }
-        }
-
+        applyGeocodeResult(result.lat, result.lon, result.address, result.display_name);
         toast.success("Location details updated from address");
       } else {
         showWarningDialog(
-          "Could not find coordinates for the entered address. Please check the address and try again."
+          "Could not find coordinates for the entered address. Please check the address and try again.",
         );
       }
     } catch (error) {
       console.error("Geocoding error:", error);
       showWarningDialog(
-        error.response?.data?.message || "Failed to fetch coordinates. Please try again."
+        error.response?.data?.message || "Failed to fetch coordinates. Please try again.",
       );
     } finally {
       setGeocoding(false);
@@ -233,9 +306,6 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
         latitude: formData.latitude ? parseFloat(formData.latitude) : null,
         longitude: formData.longitude ? parseFloat(formData.longitude) : null,
         geoFenceRadius: Math.round(geoFenceRadius * 1000), // convert km → meters for DB
-        defaultShiftDuration: formData.defaultShiftDuration
-          ? parseInt(formData.defaultShiftDuration)
-          : null,
         status: formData.status === "Active" ? "ACTIVE" : "INACTIVE",
       };
 
@@ -246,16 +316,6 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
       } else {
         // Create new site
         response = await siteApi.create(payload);
-      }
-
-      // If access code data exists, add it (only for new sites or if fields are filled)
-      if (!site && accessCodeData.codeName && accessCodeData.accessCode) {
-        await siteApi.addAccessCode(response.data.data.id, {
-          ...accessCodeData,
-          visibleOnMobile: accessCodeData.visibleOnMobile === "yes",
-          whenRostered: accessCodeData.whenRostered === "yes",
-          afterClockingIn: accessCodeData.afterClockingIn === "yes",
-        });
       }
 
       onClose();
@@ -274,47 +334,16 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
     }
   };
 
-  const handleMouseDown = (e) => {
-    if (e.target.closest(".modal-header")) {
-      setIsDragging(true);
-      setDragStart({
-        x: e.clientX - position.x,
-        y: e.clientY - position.y,
-      });
-    }
-  };
 
-  const handleMouseMove = (e) => {
-    if (isDragging) {
-      setPosition({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y,
-      });
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center overflow-y-auto p-2 sm:p-4"
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-    >
+    <Modal onClose={onClose} label="Site details">
       <div
-        ref={modalRef}
-        className="bg-[hsl(var(--color-card))] rounded-lg w-full max-w-7xl my-4 flex flex-col shadow-2xl"
-        style={{
-          transform: `translate(${position.x}px, ${position.y}px)`,
-          cursor: isDragging ? "grabbing" : "default",
-        }}
+        className="modal-surface bg-[hsl(var(--color-card))] rounded-lg w-full max-w-7xl my-4 flex flex-col shadow-2xl"
       >
         {/* Header */}
         <div
-          className="modal-header flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-[hsl(var(--color-border))] gap-2 flex-wrap bg-[hsl(var(--color-surface-elevated))] rounded-t-lg cursor-grab active:cursor-grabbing"
-          onMouseDown={handleMouseDown}
+          className="modal-header flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-[hsl(var(--color-border))] gap-2 flex-wrap bg-[hsl(var(--color-surface-elevated))] rounded-t-lg"
         >
           <div className="flex items-center gap-2">
             <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-[hsl(var(--color-foreground-secondary))]" />
@@ -323,50 +352,16 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
             </h2>
           </div>
 
-          <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
-            {!site && (
-              <button className="px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm text-pink-600 border border-pink-600 rounded hover:bg-pink-50 transition-colors flex items-center gap-1 sm:gap-2">
-                <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span className="hidden sm:inline">New Site</span>
-              </button>
-            )}
-            <Button variant="outline" size="icon" className="hidden md:flex">
-              <MapPin className="w-4 h-4" />
-            </Button>
-            <Button variant="outline" size="icon" className="hidden md:flex">
-              <X className="w-4 h-4" />
-            </Button>
-            <Button variant="outline" size="icon" className="hidden md:flex">
-              <RotateCw className="w-4 h-4" />
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={submitting}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm px-2 sm:px-4 py-1.5 sm:py-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Save className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
-              <span className="hidden sm:inline">
-                {submitting ? "Saving..." : "Save"}
-              </span>
-            </Button>
-            <button className="hidden lg:flex px-3 py-2 border border-[hsl(var(--color-border))] rounded hover:bg-[hsl(var(--color-surface-elevated))] transition-colors items-center gap-2 text-sm text-[hsl(var(--color-foreground))]">
-              Actions
-              <ChevronDown className="w-4 h-4" />
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 sm:p-2 hover:bg-[hsl(var(--color-border))] rounded transition-colors"
-            >
-              <X className="w-4 h-4 sm:w-5 sm:h-5 text-[hsl(var(--color-foreground-secondary))]" />
-            </button>
-          </div>
+          <button type="button" onClick={onClose} aria-label="Close site form" className="icon-button">
+            <X size={20} />
+          </button>
         </div>
 
         {/* Content */}
         <div className="overflow-y-auto">
           <div className="p-6">
             {/* Site Details Section */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
               <div>
                 <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
                   Site/Location Name
@@ -457,23 +452,8 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
 
               <div>
                 <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1 flex items-center gap-1">
-                  Alert & Notifications Recipient
-                  <Info className="w-3 h-3 text-blue-500" />
-                </label>
-                <Select
-                  value={formData.alertRecipient}
-                  onChange={(e) =>
-                    handleInputChange("alertRecipient", e.target.value)
-                  }
-                >
-                  <option value="">Select</option>
-                </Select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1 flex items-center gap-1">
                   Export/External ID
-                  <Info className="w-3 h-3 text-blue-500" />
+                  <Info className="w-3 h-3 text-[hsl(var(--color-primary))]" />
                 </label>
                 <Input
                   value={formData.exportId}
@@ -484,7 +464,7 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
                 />
               </div>
 
-              <div className="md:col-span-2 lg:col-span-4">
+              <div className="md:col-span-2 xl:col-span-4">
                 <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
                   Region
                 </label>
@@ -495,94 +475,6 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
                 />
               </div>
 
-              <div className="md:col-span-2 lg:col-span-4">
-                <div className="flex flex-wrap items-center gap-2 text-sm text-[hsl(var(--color-foreground-secondary))]">
-                  <input
-                    type="checkbox"
-                    className="rounded border-[hsl(var(--color-border))]"
-                  />
-                  <span>No break time deduction defined.</span>
-                  <a href="#" className="text-blue-600 hover:underline">
-                    Manage automatic break time deductions
-                  </a>
-                  <Info className="w-4 h-4 text-blue-500" />
-                </div>
-              </div>
-
-              <div className="md:col-span-2 lg:col-span-4">
-                <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
-                  Remind Employees for Upcoming Shifts
-                </label>
-                <Select
-                  value={formData.remindEmployees}
-                  onChange={(e) =>
-                    handleInputChange("remindEmployees", e.target.value)
-                  }
-                  className="max-w-xs"
-                >
-                  <option value="2 hours before">2 hours before</option>
-                  <option value="1 hour before">1 hour before</option>
-                  <option value="30 minutes before">30 minutes before</option>
-                </Select>
-              </div>
-            </div>
-
-            {/* Scheduling Section */}
-            <div className="mb-6">
-              <h3 className="text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-3 flex items-center gap-1">
-                Scheduling
-                <Info className="w-4 h-4 text-blue-500" />
-              </h3>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
-                    Default Start Time
-                  </label>
-                  <Select
-                    value={formData.defaultStartTime}
-                    onChange={(e) =>
-                      handleInputChange("defaultStartTime", e.target.value)
-                    }
-                  >
-                    <option value="">Select</option>
-                    <option value="08:00">08:00 AM</option>
-                    <option value="09:00">09:00 AM</option>
-                  </Select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
-                    Default End Time
-                  </label>
-                  <Select
-                    value={formData.defaultEndTime}
-                    onChange={(e) =>
-                      handleInputChange("defaultEndTime", e.target.value)
-                    }
-                  >
-                    <option value="">Select</option>
-                    <option value="17:00">05:00 PM</option>
-                    <option value="18:00">06:00 PM</option>
-                  </Select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
-                    Default Shift Duration
-                  </label>
-                  <Select
-                    value={formData.defaultShiftDuration}
-                    onChange={(e) =>
-                      handleInputChange("defaultShiftDuration", e.target.value)
-                    }
-                  >
-                    <option value="">Select</option>
-                    <option value="8">8 hours</option>
-                    <option value="10">10 hours</option>
-                  </Select>
-                </div>
-              </div>
             </div>
 
             {/* Tabs and Content Section */}
@@ -591,11 +483,13 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
               <div className="flex md:flex-col gap-2 md:w-44 flex-shrink-0">
                 <button
                   type="button"
+                  aria-label="Address"
+                  aria-pressed={activeTab === "address"}
                   onClick={() => setActiveTab("address")}
                   className={`flex items-center justify-center md:justify-start gap-2 px-4 py-3 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex-1 md:flex-none ${
                     activeTab === "address"
-                      ? "bg-purple-600 text-white shadow-md"
-                      : "bg-[hsl(var(--color-card))] text-purple-600 border border-purple-200 hover:bg-purple-50"
+                      ? "bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] shadow-md"
+                      : "bg-[hsl(var(--color-card))] text-[hsl(var(--color-primary))] border border-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary-soft))]"
                   }`}
                 >
                   <MapPin className="w-4 h-4" />
@@ -603,11 +497,13 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
                 </button>
                 <button
                   type="button"
+                  aria-label="Contact information"
+                  aria-pressed={activeTab === "contact"}
                   onClick={() => setActiveTab("contact")}
                   className={`flex items-center justify-center md:justify-start gap-2 px-4 py-3 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex-1 md:flex-none ${
                     activeTab === "contact"
-                      ? "bg-purple-600 text-white shadow-md"
-                      : "bg-[hsl(var(--color-card))] text-purple-600 border border-purple-200 hover:bg-purple-50"
+                      ? "bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] shadow-md"
+                      : "bg-[hsl(var(--color-card))] text-[hsl(var(--color-primary))] border border-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary-soft))]"
                   }`}
                 >
                   <Users className="w-4 h-4" />
@@ -615,11 +511,13 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
                 </button>
                 <button
                   type="button"
+                  aria-label="Access codes"
+                  aria-pressed={activeTab === "access"}
                   onClick={() => setActiveTab("access")}
                   className={`flex items-center justify-center md:justify-start gap-2 px-4 py-3 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex-1 md:flex-none ${
                     activeTab === "access"
-                      ? "bg-purple-600 text-white shadow-md"
-                      : "bg-[hsl(var(--color-card))] text-purple-600 border border-purple-200 hover:bg-purple-50"
+                      ? "bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] shadow-md"
+                      : "bg-[hsl(var(--color-card))] text-[hsl(var(--color-primary))] border border-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary-soft))]"
                   }`}
                 >
                   <Key className="w-4 h-4" />
@@ -628,7 +526,7 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
               </div>
 
               {/* Tab Content */}
-              <div className="flex-1 border border-[hsl(var(--color-border))] rounded-lg p-6 bg-[hsl(var(--color-card))]">
+              <div className="min-w-0 flex-1 border border-[hsl(var(--color-border))] rounded-lg p-6 bg-[hsl(var(--color-card))]">
                 {activeTab === "address" && (
                   <div>
                     <h3 className="text-base font-semibold text-[hsl(var(--color-foreground))] mb-4">
@@ -646,19 +544,28 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
                             handleInputChange("address", e.target.value)
                           }
                           onSelect={(addressData) => {
-                            // Auto-select timezone based on state
-                            const autoSelectTimezone = (stateCode) => {
+                            // Auto-select timezone from state. AU states map
+                            // to their zone; anything matching an Indian state
+                            // (by code or name) maps to IST; unknown falls back
+                            // to Australia/Sydney (existing default).
+                            const autoSelectTimezone = (state) => {
                               const timezoneMap = {
-                                'NSW': 'Australia/Sydney',
-                                'VIC': 'Australia/Melbourne',
-                                'QLD': 'Australia/Brisbane',
-                                'SA': 'Australia/Adelaide',
-                                'WA': 'Australia/Perth',
-                                'TAS': 'Australia/Hobart',
-                                'NT': 'Australia/Darwin',
-                                'ACT': 'Australia/Canberra',
+                                NSW: 'Australia/Sydney',
+                                VIC: 'Australia/Melbourne',
+                                QLD: 'Australia/Brisbane',
+                                SA: 'Australia/Adelaide',
+                                WA: 'Australia/Perth',
+                                TAS: 'Australia/Hobart',
+                                NT: 'Australia/Darwin',
+                                ACT: 'Australia/Canberra',
                               };
-                              return timezoneMap[stateCode] || 'Australia/Sydney';
+                              if (state && timezoneMap[state]) return timezoneMap[state];
+                              const needle = String(state || '').toLowerCase();
+                              const isIndian = INDIAN_STATES.some(
+                                (i) => i.code.toLowerCase() === needle || i.name.toLowerCase() === needle,
+                              );
+                              if (isIndian) return 'Asia/Kolkata';
+                              return 'Australia/Sydney';
                             };
 
                             // Update all address fields
@@ -677,7 +584,6 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
                             toast.success("Location details auto-filled");
                           }}
                           placeholder="Enter a location"
-                          countryCode="au"
                         />
                       </div>
 
@@ -685,19 +591,10 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
                         <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
                           State
                         </label>
-                        <Select
+                        <StateInput
                           value={formData.state}
-                          onChange={(e) =>
-                            handleInputChange("state", e.target.value)
-                          }
-                        >
-                          <option value="">Select State</option>
-                          {AUSTRALIAN_STATES.map((state) => (
-                            <option key={state.code} value={state.code}>
-                              {state.code} - {state.name}
-                            </option>
-                          ))}
-                        </Select>
+                          onChange={(next) => handleInputChange("state", next)}
+                        />
                       </div>
 
                       <div>
@@ -742,10 +639,10 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
                           onChange={(e) =>
                             handleInputChange("timezone", e.target.value)
                           }
-                          className="max-w-md"
+                          wrapperClassName="max-w-md"
                         >
                           <option value="">Select Timezone</option>
-                          {AUSTRALIAN_TIMEZONES.map((tz) => (
+                          {SUPPORTED_TIMEZONES.map((tz) => (
                             <option key={tz.value} value={tz.value}>
                               {tz.label}
                             </option>
@@ -781,10 +678,10 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
                         </div>
                       </div>
 
-                      <div className="flex gap-3 mb-6">
+                      <div className="flex flex-wrap gap-3 mb-6">
                         <Button
-                          variant="outline"
-                          className="bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                          variant="primary"
+                          className="disabled:opacity-60"
                           onClick={handleGetMapAddress}
                           disabled={geocoding}
                         >
@@ -796,8 +693,7 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
                           {geocoding ? "Fetching..." : "Get Map Address"}
                         </Button>
                         <Button
-                          variant="outline"
-                          className="bg-blue-600 text-white hover:bg-blue-700"
+                          variant="primary"
                           onClick={() => setShowMapModal(true)}
                         >
                           <MapPin className="w-4 h-4 mr-2" />
@@ -850,35 +746,58 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
                         <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
                           Contact Person
                         </label>
-                        <Input placeholder="Enter contact person name" />
+                        <Input
+                          placeholder="Enter contact person name"
+                          value={formData.contactPerson}
+                          onChange={(e) => handleInputChange("contactPerson", e.target.value)}
+                        />
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
                           Position/Title
                         </label>
-                        <Input placeholder="Enter position" />
+                        <Input
+                          placeholder="Enter position"
+                          value={formData.contactPosition}
+                          onChange={(e) => handleInputChange("contactPosition", e.target.value)}
+                        />
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
                           Phone Number
                         </label>
-                        <Input type="tel" placeholder="Enter phone number" />
+                        <Input
+                          type="tel"
+                          placeholder="Enter phone number"
+                          value={formData.contactPhone}
+                          onChange={(e) => handleInputChange("contactPhone", e.target.value)}
+                        />
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
                           Mobile Number
                         </label>
-                        <Input type="tel" placeholder="Enter mobile number" />
+                        <Input
+                          type="tel"
+                          placeholder="Enter mobile number"
+                          value={formData.contactMobile}
+                          onChange={(e) => handleInputChange("contactMobile", e.target.value)}
+                        />
                       </div>
 
                       <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
                           Email Address
                         </label>
-                        <Input type="email" placeholder="Enter email address" />
+                        <Input
+                          type="email"
+                          placeholder="Enter email address"
+                          value={formData.contactEmail}
+                          onChange={(e) => handleInputChange("contactEmail", e.target.value)}
+                        />
                       </div>
 
                       <div className="md:col-span-2">
@@ -886,8 +805,10 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
                           Additional Notes
                         </label>
                         <textarea
-                          className="flex w-full rounded-md border border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))] px-3 py-2 text-sm text-[hsl(var(--color-foreground))] ring-offset-white placeholder:text-[hsl(var(--color-foreground-muted))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[100px] resize-none"
+                          className="flex w-full rounded-md border border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))] px-3 py-2 text-sm text-[hsl(var(--color-foreground))] ring-offset-[hsl(var(--color-card))] placeholder:text-[hsl(var(--color-foreground-muted))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--color-ring))] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[100px] resize-none"
                           placeholder="Enter any additional contact information or notes"
+                          value={formData.contactNotes}
+                          onChange={(e) => handleInputChange("contactNotes", e.target.value)}
                         />
                       </div>
                     </div>
@@ -895,298 +816,63 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
                 )}
 
                 {activeTab === "access" && (
-                  <div>
-                    {/* New Access Code Section */}
-                    <div className="border border-[hsl(var(--color-border))] rounded-lg mb-6">
-                      <button
-                        onClick={() =>
-                          setAccessCodeExpanded(!accessCodeExpanded)
-                        }
-                        className="w-full flex items-center justify-between px-4 py-3 bg-[hsl(var(--color-surface-elevated))] hover:bg-[hsl(var(--color-border))] transition-colors rounded-lg border-b border-[hsl(var(--color-border))]"
-                      >
-                        <div className="flex items-center gap-2 text-blue-600">
-                          <Key className="w-4 h-4" />
-                          <span className="text-sm font-medium">
-                            New Access Code
-                          </span>
-                        </div>
-                        {accessCodeExpanded ? (
-                          <ChevronUp className="w-5 h-5 text-[hsl(var(--color-foreground-secondary))]" />
-                        ) : (
-                          <ChevronDown className="w-5 h-5 text-[hsl(var(--color-foreground-secondary))]" />
-                        )}
-                      </button>
-
-                      {accessCodeExpanded && (
-                        <div className="p-6 space-y-4">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
-                                Code Name
-                              </label>
-                              <Input
-                                value={accessCodeData.codeName}
-                                onChange={(e) =>
-                                  setAccessCodeData({
-                                    ...accessCodeData,
-                                    codeName: e.target.value,
-                                  })
-                                }
-                                placeholder="Example: Front Gate, Fire Escape, Emergency Exit"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
-                                Access Code
-                              </label>
-                              <div className="relative">
-                                <Input
-                                  type={showAccessCode ? "text" : "password"}
-                                  value={accessCodeData.accessCode}
-                                  onChange={(e) =>
-                                    setAccessCodeData({
-                                      ...accessCodeData,
-                                      accessCode: e.target.value,
-                                    })
-                                  }
-                                  placeholder=""
-                                  className="pr-10"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setShowAccessCode(!showAccessCode)
-                                  }
-                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[hsl(var(--color-foreground-muted))] hover:text-[hsl(var(--color-foreground-secondary))]"
-                                >
-                                  {showAccessCode ? (
-                                    <EyeOff className="w-4 h-4" />
-                                  ) : (
-                                    <Eye className="w-4 h-4" />
-                                  )}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
-                              Notes
-                            </label>
-                            <textarea
-                              value={accessCodeData.notes}
-                              onChange={(e) =>
-                                setAccessCodeData({
-                                  ...accessCodeData,
-                                  notes: e.target.value,
-                                })
-                              }
-                              className="flex w-full rounded-md border border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))] px-3 py-2 text-sm text-[hsl(var(--color-foreground))] ring-offset-white placeholder:text-[hsl(var(--color-foreground-muted))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[80px]"
-                              placeholder=""
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-2">
-                              Visible On Mobile
-                            </label>
-                            <div className="flex items-center gap-4">
-                              <label className="flex items-center cursor-pointer">
-                                <input
-                                  type="radio"
-                                  name="visibleOnMobile"
-                                  value="yes"
-                                  checked={
-                                    accessCodeData.visibleOnMobile === "yes"
-                                  }
-                                  onChange={(e) =>
-                                    setAccessCodeData({
-                                      ...accessCodeData,
-                                      visibleOnMobile: e.target.value,
-                                    })
-                                  }
-                                  className="w-4 h-4 text-blue-600 border-[hsl(var(--color-border))] focus:ring-blue-500"
-                                />
-                                <span className="ml-2 text-sm text-[hsl(var(--color-foreground))]">
-                                  Yes
-                                </span>
-                              </label>
-                              <label className="flex items-center cursor-pointer">
-                                <input
-                                  type="radio"
-                                  name="visibleOnMobile"
-                                  value="no"
-                                  checked={
-                                    accessCodeData.visibleOnMobile === "no"
-                                  }
-                                  onChange={(e) =>
-                                    setAccessCodeData({
-                                      ...accessCodeData,
-                                      visibleOnMobile: e.target.value,
-                                    })
-                                  }
-                                  className="w-4 h-4 text-red-600 border-[hsl(var(--color-border))] focus:ring-red-500"
-                                />
-                                <span className="ml-2 text-sm text-[hsl(var(--color-foreground))]">
-                                  No
-                                </span>
-                              </label>
-                            </div>
-                          </div>
-
-                          <div className="border-t border-[hsl(var(--color-border))] pt-4 mt-4">
-                            <h4 className="text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-3">
-                              Employees can see the access codes
-                            </h4>
-
-                            <div className="space-y-3">
-                              <div className="flex items-center justify-between">
-                                <label className="text-sm text-[hsl(var(--color-foreground))]">
-                                  When rostered
-                                </label>
-                                <div className="flex items-center gap-4">
-                                  <label className="flex items-center cursor-pointer">
-                                    <input
-                                      type="radio"
-                                      name="whenRostered"
-                                      value="yes"
-                                      checked={
-                                        accessCodeData.whenRostered === "yes"
-                                      }
-                                      onChange={(e) =>
-                                        setAccessCodeData({
-                                          ...accessCodeData,
-                                          whenRostered: e.target.value,
-                                        })
-                                      }
-                                      className="w-4 h-4 text-blue-600 border-[hsl(var(--color-border))] focus:ring-blue-500"
-                                    />
-                                    <span className="ml-2 text-sm text-[hsl(var(--color-foreground))]">
-                                      Yes
-                                    </span>
-                                  </label>
-                                  <label className="flex items-center cursor-pointer">
-                                    <input
-                                      type="radio"
-                                      name="whenRostered"
-                                      value="no"
-                                      checked={
-                                        accessCodeData.whenRostered === "no"
-                                      }
-                                      onChange={(e) =>
-                                        setAccessCodeData({
-                                          ...accessCodeData,
-                                          whenRostered: e.target.value,
-                                        })
-                                      }
-                                      className="w-4 h-4 text-red-600 border-[hsl(var(--color-border))] focus:ring-red-500"
-                                    />
-                                    <span className="ml-2 text-sm text-[hsl(var(--color-foreground))]">
-                                      No
-                                    </span>
-                                  </label>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center justify-between">
-                                <label className="text-sm text-[hsl(var(--color-foreground))]">
-                                  After clocking in
-                                </label>
-                                <div className="flex items-center gap-4">
-                                  <label className="flex items-center cursor-pointer">
-                                    <input
-                                      type="radio"
-                                      name="afterClockingIn"
-                                      value="yes"
-                                      checked={
-                                        accessCodeData.afterClockingIn === "yes"
-                                      }
-                                      onChange={(e) =>
-                                        setAccessCodeData({
-                                          ...accessCodeData,
-                                          afterClockingIn: e.target.value,
-                                        })
-                                      }
-                                      className="w-4 h-4 text-blue-600 border-[hsl(var(--color-border))] focus:ring-blue-500"
-                                    />
-                                    <span className="ml-2 text-sm text-[hsl(var(--color-foreground))]">
-                                      Yes
-                                    </span>
-                                  </label>
-                                  <label className="flex items-center cursor-pointer">
-                                    <input
-                                      type="radio"
-                                      name="afterClockingIn"
-                                      value="no"
-                                      checked={
-                                        accessCodeData.afterClockingIn === "no"
-                                      }
-                                      onChange={(e) =>
-                                        setAccessCodeData({
-                                          ...accessCodeData,
-                                          afterClockingIn: e.target.value,
-                                        })
-                                      }
-                                      className="w-4 h-4 text-red-600 border-[hsl(var(--color-border))] focus:ring-red-500"
-                                    />
-                                    <span className="ml-2 text-sm text-[hsl(var(--color-foreground))]">
-                                      No
-                                    </span>
-                                  </label>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                  site && (site.id || site._id) ? (
+                    <AccessCodesManager siteId={site.id || site._id} />
+                  ) : (
+                    <div className="p-6 text-sm text-[hsl(var(--color-foreground-secondary))] border border-dashed border-[hsl(var(--color-border))] rounded">
+                      <p className="mb-2 font-medium text-[hsl(var(--color-foreground))]">
+                        Save the site first
+                      </p>
+                      <p>
+                        Access codes attach to a saved site. Fill in the site
+                        details and click <strong>Save site</strong>, then
+                        re-open this site to add and manage its access codes.
+                      </p>
                     </div>
-
-                    {/* Add New Button */}
-                    <Button
-                      variant="outline"
-                      className="text-blue-600 border-blue-600 hover:bg-blue-50"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add New
-                    </Button>
-                  </div>
+                  )
                 )}
               </div>
             </div>
           </div>
         </div>
+        <div className="modal-footer flex items-center justify-end gap-3 px-6 py-4 border-t">
+          <Button variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
+          <Button onClick={handleSave} disabled={submitting}>
+            <Save size={16} />
+            {submitting ? "Saving..." : "Save site"}
+          </Button>
+        </div>
       </div>
 
       {/* Warning Dialog */}
       {showWarning && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-[70] flex items-center justify-center p-4">
-          <div className="bg-white rounded shadow-2xl w-full max-w-sm">
-            <div className="flex items-center justify-between px-4 py-3 bg-[#8B0000] rounded-t">
-              <div className="flex items-center gap-2 text-white">
+        <Modal onClose={() => setShowWarning(false)} label="Address warning">
+          <div className="modal-surface w-full max-w-sm">
+            <div className="flex items-center justify-between px-4 py-3 bg-[hsl(var(--color-error))] rounded-t">
+              <div className="flex items-center gap-2 text-[hsl(var(--color-error-foreground))]">
                 <AlertTriangle className="w-4 h-4" />
                 <span className="font-semibold text-sm">Warning</span>
               </div>
               <button
                 onClick={() => setShowWarning(false)}
-                className="text-white hover:text-gray-200"
+                className="text-[hsl(var(--color-error-foreground))]"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="px-5 py-6 text-sm text-gray-700 min-h-[80px]">
+            <div className="px-5 py-6 text-sm text-[hsl(var(--color-foreground-secondary))] min-h-[80px]">
               {warningMessage}
             </div>
-            <div className="flex justify-end px-4 py-3 border-t border-gray-200">
+            <div className="flex justify-end px-4 py-3 border-t border-[hsl(var(--color-border))]">
               <button
                 onClick={() => setShowWarning(false)}
-                className="px-5 py-2 bg-[#8B0000] text-white text-sm rounded hover:bg-[#6B0000] transition-colors"
+                className="px-5 py-2 bg-[hsl(var(--color-error))] text-[hsl(var(--color-error-foreground))] text-sm rounded hover:opacity-90 transition-colors"
               >
                 OK
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Map Modal */}
@@ -1203,6 +889,6 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
           onSave={handleMapSave}
         />
       )}
-    </div>
+    </Modal>
   );
 }

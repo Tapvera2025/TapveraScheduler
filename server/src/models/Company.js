@@ -8,6 +8,7 @@
 const mongoose = require('mongoose');
 const softDeletePlugin = require('./plugins/softDelete');
 const auditLogPlugin = require('./plugins/auditLog');
+const { MODULE_KEYS, DEFAULT_MODULES } = require('../config/modules');
 
 const companySchema = new mongoose.Schema(
   {
@@ -59,6 +60,7 @@ const companySchema = new mongoose.Schema(
         'Australia/Sydney', // AEST/AEDT (UTC+10/+11)
         'Australia/Melbourne', // AEST/AEDT (UTC+10/+11)
         'Australia/Hobart', // AEST/AEDT (UTC+10/+11)
+        'Asia/Kolkata', // IST (UTC+5:30)
       ],
       default: 'Australia/Sydney',
     },
@@ -85,6 +87,29 @@ const companySchema = new mongoose.Schema(
       endDate: Date,
     },
 
+    // Which modules this organisation may use. Managed by the master admin.
+    // An empty or missing list is treated as "everything" for legacy records —
+    // see middleware/moduleAccess.js
+    enabledModules: {
+      type: [String],
+      enum: {
+        values: MODULE_KEYS,
+        message: '{VALUE} is not a known module',
+      },
+      default: () => [...DEFAULT_MODULES],
+    },
+
+    // Who to contact at this organisation (used by the master admin)
+    primaryContact: {
+      name: String,
+      email: {
+        type: String,
+        lowercase: true,
+        trim: true,
+      },
+      phone: String,
+    },
+
     isActive: {
       type: Boolean,
       default: true,
@@ -105,5 +130,6 @@ companySchema.plugin(auditLogPlugin);
 // Indexes
 companySchema.index({ name: 1 });
 companySchema.index({ isActive: 1, deletedAt: 1 });
+companySchema.index({ 'subscription.status': 1 });
 
 module.exports = mongoose.model('Company', companySchema);

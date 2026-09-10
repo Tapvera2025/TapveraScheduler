@@ -7,6 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const { auth, authorize } = require('../middleware/auth');
+const { requireModule } = require('../middleware/moduleAccess');
 const clockInOutController = require('../controllers/clockInOut.controller');
 const validate = require('../middleware/validate');
 const { uploadSinglePhoto, handleUploadError } = require('../config/upload');
@@ -21,6 +22,9 @@ const {
 
 // All routes require authentication
 router.use(auth);
+
+// Gated behind the 'attendance' module
+router.use(requireModule('attendance'));
 
 /**
  * Clock In

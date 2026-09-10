@@ -196,30 +196,25 @@ timeRecordSchema.index({ shiftId: 1, companyId: 1 });
 timeRecordSchema.index({ clockInLocation: '2dsphere' });
 timeRecordSchema.index({ clockOutLocation: '2dsphere' });
 
-// Pre-save hook to calculate total hours
-timeRecordSchema.pre('save', function (next) {
-  // Calculate total hours if clocked out
+// Validate, then work out the hours.
+//
+// Written as an async hook rather than the callback style: Mongoose 9 no longer
+// supports middleware that takes a `next` argument, and the callback version of
+// this silently threw "next is not a function" on every save.
+timeRecordSchema.pre('save', async function () {
+  if (this.clockOutTime && this.clockInTime && this.clockOutTime <= this.clockInTime) {
+    throw new Error('Clock out time must be after clock in time');
+  }
+
+  if (this.status === 'CLOCKED_OUT' && !this.clockOutTime) {
+    throw new Error('Clock out time is required when status is CLOCKED_OUT');
+  }
+
+  // Total hours worked, to two decimal places
   if (this.clockOutTime && this.clockInTime) {
     const diff = this.clockOutTime - this.clockInTime;
-    this.totalHours = Math.round((diff / (1000 * 60 * 60)) * 100) / 100; // 2 decimal places
+    this.totalHours = Math.round((diff / (1000 * 60 * 60)) * 100) / 100;
   }
-  next();
-});
-
-// Validation: Can't have clock out before clock in
-timeRecordSchema.pre('save', function (next) {
-  if (this.clockOutTime && this.clockInTime && this.clockOutTime <= this.clockInTime) {
-    return next(new Error('Clock out time must be after clock in time'));
-  }
-  next();
-});
-
-// Validation: Clock out location required if clocked out
-timeRecordSchema.pre('save', function (next) {
-  if (this.status === 'CLOCKED_OUT' && !this.clockOutTime) {
-    return next(new Error('Clock out time is required when status is CLOCKED_OUT'));
-  }
-  next();
 });
 
 module.exports = mongoose.model('TimeRecord', timeRecordSchema);

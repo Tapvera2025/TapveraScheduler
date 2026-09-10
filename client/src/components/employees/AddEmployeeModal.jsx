@@ -1,13 +1,14 @@
+import Modal from "../ui/Modal";
 import { useState, useEffect } from "react";
-import { X, Upload, User, Eye, EyeOff } from "lucide-react";
+import { X, User, Eye, EyeOff } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { Label } from "../ui/Label";
 import { LocationAutocomplete } from "../ui/LocationAutocomplete";
 import toast from "react-hot-toast";
-import { siteApi, employeeApi } from "../../lib/api";
-import { AUSTRALIAN_STATES } from "../../constants/locations";
+import { siteApi } from "../../lib/api";
+import { StateInput } from "../ui/StateInput";
 
 export default function AddEmployeeModal({
   isOpen,
@@ -24,11 +25,12 @@ export default function AddEmployeeModal({
     department: "",
     password: "",
     isActive: true,
-    sendInvitation: true, // Send invitation by default
+    sendInvitation: true,
     address: "",
     townSuburb: "",
     state: "",
     postalCode: "",
+    emergencyContact: { name: "", relationship: "", phone: "" },
   });
 
   const [sites, setSites] = useState([]);
@@ -76,6 +78,11 @@ export default function AddEmployeeModal({
           townSuburb: employee.townSuburb || "",
           state: employee.state || "",
           postalCode: employee.postalCode || "",
+          emergencyContact: {
+            name: employee.emergencyContact?.name || "",
+            relationship: employee.emergencyContact?.relationship || "",
+            phone: employee.emergencyContact?.phone || "",
+          },
         });
         setSelectedSites([]);
       } else {
@@ -93,6 +100,7 @@ export default function AddEmployeeModal({
           townSuburb: "",
           state: "",
           postalCode: "",
+          emergencyContact: { name: "", relationship: "", phone: "" },
         });
         setSelectedSites([]);
       }
@@ -101,6 +109,13 @@ export default function AddEmployeeModal({
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleEmergencyChange = (field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      emergencyContact: { ...prev.emergencyContact, [field]: value },
+    }));
   };
 
   const handleSiteToggle = (siteId) => {
@@ -147,15 +162,15 @@ export default function AddEmployeeModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-[hsl(var(--color-card))] rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+    <Modal onClose={onClose} label="Employee details">
+      <div className="modal-surface bg-[hsl(var(--color-card))] rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-[hsl(var(--color-border))] bg-[hsl(var(--color-surface-elevated))]">
+        <div className="modal-header flex items-center justify-between p-4 border-b border-[hsl(var(--color-border))] bg-[hsl(var(--color-surface-elevated))]">
           <h2 className="text-lg font-semibold text-[hsl(var(--color-foreground))] flex items-center gap-2">
             <User className="w-5 h-5" />
             {employee ? "Edit Employee" : "Employee Details"}
           </h2>
-          <button
+          <button type="button" aria-label="Close dialog"
             onClick={onClose}
             className="text-[hsl(var(--color-foreground-secondary))] hover:text-[hsl(var(--color-foreground))] transition-colors"
           >
@@ -165,36 +180,25 @@ export default function AddEmployeeModal({
 
         {/* Form Content */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
-          <div className="flex">
-            {/* Left Column - Form Fields */}
-            <div className="flex-1 p-6 space-y-6">
-              {/* Basic Information */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Employee No.</Label>
-                  <Input
-                    value={employee?.id ? employee.id.slice(-4) : "Auto"}
-                    disabled
-                    className="mt-1 bg-[hsl(var(--color-surface-elevated))]"
-                  />
-                </div>
-                <div>
-                  <Label>Status *</Label>
-                  <Select
-                    value={formData.isActive ? "active" : "inactive"}
-                    onChange={(e) =>
-                      handleChange("isActive", e.target.value === "active")
-                    }
-                    className="mt-1"
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </Select>
-                </div>
+          <div>
+            <div className="p-6 space-y-6">
+              {/* Status */}
+              <div>
+                <Label>Status *</Label>
+                <Select
+                  value={formData.isActive ? "active" : "inactive"}
+                  onChange={(e) =>
+                    handleChange("isActive", e.target.value === "active")
+                  }
+                  className="mt-1"
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </Select>
               </div>
 
               {/* Name Fields */}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>First Name *</Label>
                   <Input
@@ -204,10 +208,6 @@ export default function AddEmployeeModal({
                     placeholder="First Name"
                     required
                   />
-                </div>
-                <div>
-                  <Label>Middle Name</Label>
-                  <Input className="mt-1" placeholder="Middle Name" />
                 </div>
                 <div>
                   <Label>Last Name *</Label>
@@ -255,54 +255,41 @@ export default function AddEmployeeModal({
                   Provide a password to allow this employee to log in and view
                   their schedules
                 </p>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Password {!employee && "*"}</Label>
-                    <div className="relative">
-                      <Input
-                        type={showPassword ? "text" : "password"}
-                        value={formData.password}
-                        onChange={(e) =>
-                          handleChange("password", e.target.value)
-                        }
-                        className="mt-1 pr-10"
-                        placeholder={
-                          employee
-                            ? "Leave blank to keep current password"
-                            : "Enter password"
-                        }
-                        required={!employee}
-                        minLength={8}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[hsl(var(--color-foreground-secondary))] hover:text-[hsl(var(--color-foreground))] transition-colors"
-                      >
-                        {showPassword ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-                    <p className="text-xs text-[hsl(var(--color-foreground-secondary))] mt-1">
-                      {employee
-                        ? "Leave blank to keep current password"
-                        : "Minimum 8 characters"}
-                    </p>
-                  </div>
-                  <div>
-                    <Label>Role</Label>
+                <div>
+                  <Label>Password {!employee && "*"}</Label>
+                  <div className="relative">
                     <Input
-                      value="USER (View Own Shifts)"
-                      disabled
-                      className="mt-1 bg-[hsl(var(--color-surface-elevated))]"
+                      type={showPassword ? "text" : "password"}
+                      value={formData.password}
+                      onChange={(e) =>
+                        handleChange("password", e.target.value)
+                      }
+                      className="mt-1 pr-10"
+                      placeholder={
+                        employee
+                          ? "Leave blank to keep current password"
+                          : "Enter password"
+                      }
+                      required={!employee}
+                      minLength={8}
                     />
-                    <p className="text-xs text-[hsl(var(--color-foreground-secondary))] mt-1">
-                      Employees can view their own schedules
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[hsl(var(--color-foreground-secondary))] hover:text-[hsl(var(--color-foreground))] transition-colors"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
                   </div>
+                  <p className="text-xs text-[hsl(var(--color-foreground-secondary))] mt-1">
+                    {employee
+                      ? "Leave blank to keep current password"
+                      : "Minimum 8 characters"}
+                  </p>
                 </div>
               </div>
 
@@ -338,7 +325,6 @@ export default function AddEmployeeModal({
                         toast.success("Address details auto-filled");
                       }}
                       placeholder="Enter a location"
-                      countryCode="au"
                     />
                   </div>
                   <div className="grid grid-cols-3 gap-4">
@@ -353,18 +339,11 @@ export default function AddEmployeeModal({
                     </div>
                     <div>
                       <Label>State</Label>
-                      <Select
+                      <StateInput
                         className="mt-1"
                         value={formData.state}
-                        onChange={(e) => handleChange("state", e.target.value)}
-                      >
-                        <option value="">Select State</option>
-                        {AUSTRALIAN_STATES.map((state) => (
-                          <option key={state.code} value={state.code}>
-                            {state.code} - {state.name}
-                          </option>
-                        ))}
-                      </Select>
+                        onChange={(next) => handleChange("state", next)}
+                      />
                     </div>
                     <div>
                       <Label>Postal Code</Label>
@@ -384,36 +363,16 @@ export default function AddEmployeeModal({
                 <h3 className="text-md font-semibold text-[hsl(var(--color-foreground))] mb-4">
                   Employment
                 </h3>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Team</Label>
-                      <Select className="mt-1">
-                        <option value="">Select Team</option>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label>Department</Label>
-                      <Input
-                        value={formData.department}
-                        onChange={(e) =>
-                          handleChange("department", e.target.value)
-                        }
-                        className="mt-1"
-                        placeholder="Department"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Custom ID/Ref (1)</Label>
-                      <Input className="mt-1" />
-                    </div>
-                    <div>
-                      <Label>Custom ID/Ref (2)</Label>
-                      <Input className="mt-1" />
-                    </div>
-                  </div>
+                <div>
+                  <Label>Department</Label>
+                  <Input
+                    value={formData.department}
+                    onChange={(e) =>
+                      handleChange("department", e.target.value)
+                    }
+                    className="mt-1"
+                    placeholder="Department"
+                  />
                 </div>
               </div>
 
@@ -440,7 +399,7 @@ export default function AddEmployeeModal({
                           type="checkbox"
                           checked={selectedSites.includes(site.id)}
                           onChange={() => handleSiteToggle(site.id)}
-                          className="w-4 h-4 rounded border-[hsl(var(--color-border))] text-blue-600 focus:ring-blue-500"
+                          className="w-4 h-4 rounded border-[hsl(var(--color-border))] text-[hsl(var(--color-primary))] focus:ring-[hsl(var(--color-ring))]"
                         />
                         <span className="text-sm text-[hsl(var(--color-foreground))]">
                           {site.shortName} - {site.siteLocationName}
@@ -450,7 +409,7 @@ export default function AddEmployeeModal({
                   )}
                 </div>
                 {selectedSites.length > 0 && (
-                  <p className="text-sm text-blue-600 mt-2">
+                  <p className="text-sm text-[hsl(var(--color-primary))] mt-2">
                     {selectedSites.length} site
                     {selectedSites.length !== 1 ? "s" : ""} selected
                   </p>
@@ -469,11 +428,17 @@ export default function AddEmployeeModal({
                       <Input
                         className="mt-1"
                         placeholder="Emergency Contact Full Name"
+                        value={formData.emergencyContact.name}
+                        onChange={(e) => handleEmergencyChange("name", e.target.value)}
                       />
                     </div>
                     <div>
                       <Label>Relationship</Label>
-                      <Select className="mt-1">
+                      <Select
+                        className="mt-1"
+                        value={formData.emergencyContact.relationship}
+                        onChange={(e) => handleEmergencyChange("relationship", e.target.value)}
+                      >
                         <option value="">Select Relationship</option>
                         <option value="spouse">Spouse</option>
                         <option value="parent">Parent</option>
@@ -489,144 +454,51 @@ export default function AddEmployeeModal({
                       type="tel"
                       className="mt-1"
                       placeholder="Emergency Phone"
+                      value={formData.emergencyContact.phone}
+                      onChange={(e) => handleEmergencyChange("phone", e.target.value)}
                     />
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Right Column - Photo and Settings */}
-            <div className="w-80 bg-[hsl(var(--color-surface-elevated))] border-l border-[hsl(var(--color-border))] p-6 space-y-6">
-              {/* Photo Upload */}
-              <div className="flex flex-col items-center">
-                <div className="w-48 h-48 bg-[hsl(var(--color-border))] rounded flex items-center justify-center mb-4">
-                  <User className="w-24 h-24 text-[hsl(var(--color-foreground-secondary))]" />
-                </div>
-                <button
-                  type="button"
-                  className="flex items-center gap-2 text-blue-600 hover:text-blue-800 text-sm"
-                >
-                  <Upload className="w-4 h-4" />
-                  Upload Photo
-                </button>
-              </div>
-
-              {/* Grading/Ranking */}
-              <div>
-                <Label className="mb-2 block">Grading/Ranking</Label>
-                <div className="flex gap-1">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      type="button"
-                      className="text-2xl text-[hsl(var(--color-border))] hover:text-yellow-400"
-                    >
-                      ★
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Access Toggles */}
-              <div className="space-y-3">
+              {/* Send Invitation */}
+              <div className="pt-4 border-t border-[hsl(var(--color-border))]">
                 <div className="flex items-center justify-between">
-                  <Label className="mb-0">Roster Access</Label>
-                  <button
-                    type="button"
-                    className="w-12 h-6 bg-blue-500 rounded-full relative"
-                  >
-                    <div className="w-5 h-5 bg-white rounded-full absolute top-0.5 right-0.5" />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Label className="mb-0">Mobile Attendance Access</Label>
-                  <button
-                    type="button"
-                    className="w-12 h-6 bg-blue-500 rounded-full relative"
-                  >
-                    <div className="w-5 h-5 bg-white rounded-full absolute top-0.5 right-0.5" />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Label className="mb-0 text-xs">
-                    Clock In/Out Against Adhoc Shifts
-                  </Label>
-                  <button
-                    type="button"
-                    className="w-12 h-6 bg-blue-500 rounded-full relative"
-                  >
-                    <div className="w-5 h-5 bg-white rounded-full absolute top-0.5 right-0.5" />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Label className="mb-0 text-xs">
-                    Add/Maintain Manual Timesheets
-                  </Label>
-                  <button
-                    type="button"
-                    className="w-12 h-6 bg-red-500 rounded-full relative"
-                  >
-                    <div className="w-5 h-5 bg-white rounded-full absolute top-0.5 left-0.5" />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Label className="mb-0">QR/NFC Clocking</Label>
-                  <button
-                    type="button"
-                    className="w-12 h-6 bg-red-500 rounded-full relative"
-                  >
-                    <div className="w-5 h-5 bg-white rounded-full absolute top-0.5 left-0.5" />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Label className="mb-0">Send Invitation</Label>
+                  <div>
+                    <Label className="mb-0">Send Invitation</Label>
+                    <p className="text-xs text-[hsl(var(--color-foreground-secondary))] mt-1">
+                      {formData.sendInvitation
+                        ? `Welcome email with login credentials will be sent to ${formData.email || "the employee"}`
+                        : "No email will be sent. Share credentials manually."}
+                    </p>
+                  </div>
                   <button
                     type="button"
                     onClick={() => handleChange("sendInvitation", !formData.sendInvitation)}
-                    className={`w-12 h-6 rounded-full relative transition-colors ${
-                      formData.sendInvitation ? "bg-blue-500" : "bg-red-500"
+                    className={`w-12 h-6 rounded-full relative transition-colors flex-shrink-0 ${
+                      formData.sendInvitation ? "bg-[hsl(var(--color-primary))]" : "bg-[hsl(var(--color-error))]"
                     }`}
+                    aria-label="Toggle send invitation"
+                    aria-pressed={formData.sendInvitation}
                   >
                     <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-all ${
                       formData.sendInvitation ? "right-0.5" : "left-0.5"
                     }`} />
                   </button>
                 </div>
-                {formData.sendInvitation && formData.password && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    Welcome email with login credentials will be sent to {formData.email || 'employee'}
-                  </p>
-                )}
-                {!formData.sendInvitation && formData.password && (
-                  <p className="text-xs text-[hsl(var(--color-foreground-secondary))] mt-1">
-                    No email will be sent. Share credentials manually.
-                  </p>
-                )}
               </div>
             </div>
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-between p-4 border-t border-[hsl(var(--color-border))] bg-[hsl(var(--color-surface-elevated))]">
+          <div className="modal-footer flex items-center justify-end gap-3 p-4 border-t border-[hsl(var(--color-border))] bg-[hsl(var(--color-surface-elevated))]">
             <Button type="button" variant="outline" onClick={onClose}>
               Close
             </Button>
-            <div className="flex items-center gap-2">
-              <Button type="submit" variant="primary">
-                Save
-              </Button>
-              <Button type="button" variant="outline">
-                Actions ▼
-              </Button>
-            </div>
+            <Button type="submit" variant="primary">Save employee</Button>
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 }

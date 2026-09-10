@@ -8,6 +8,8 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const config = require('../config');
 const asyncHandler = require('../utils/asyncHandler');
+const { getEnabledModules, loadCompanyAccess } = require('../middleware/moduleAccess');
+const { MODULE_KEYS } = require('../config/modules');
 
 /**
  * Generate JWT token
@@ -18,6 +20,15 @@ const generateToken = (userId, companyId, role) => {
     config.auth.jwtSecret,
     { expiresIn: config.auth.jwtExpiresIn }
   );
+};
+
+/**
+ * Which modules this user's organisation may use.
+ * The master admin sits above organisations, so it gets the full set.
+ */
+const resolveModules = async (user) => {
+  if (user.role === 'MASTER') return [...MODULE_KEYS];
+  return await getEnabledModules(user.companyId);
 };
 
 /**
@@ -47,18 +58,59 @@ const login = asyncHandler(async (req, res) => {
     });
   }
 
-  // 3. Generate token
+  // 3. Check the organisation is allowed to sign in at all
+  let enabledModules;
+
+  if (user.role === 'MASTER') {
+    enabledModules = [...MODULE_KEYS];
+  } else {
+    const access = await loadCompanyAccess(user.companyId);
+
+    if (!access) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your organisation could not be found. Please contact support.'
+      });
+    }
+
+    if (!access.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'This organisation has been deactivated. Please contact support.'
+      });
+    }
+
+    if (['suspended', 'cancelled'].includes(access.subscriptionStatus)) {
+      return res.status(403).json({
+        success: false,
+        message: 'This organisation\'s subscription is not active. Please contact support.'
+      });
+    }
+
+    enabledModules = access.enabledModules;
+
+    // Employees can only sign in when the portal module is switched on
+    if (user.role === 'USER' && !enabledModules.includes('portal')) {
+      return res.status(403).json({
+        success: false,
+        message: 'The employee portal is not enabled for your organisation.'
+      });
+    }
+  }
+
+  // 4. Generate token
   const token = generateToken(user._id, user.companyId, user.role);
 
-  // 4. Update last login
+  // 5. Update last login
   user.lastLoginAt = new Date();
   await user.save();
 
-  // 5. Return user data and token
+  // 6. Return user data, token and the organisation's enabled modules
   res.json({
     success: true,
     data: {
       token,
+      enabledModules,
       user: {
         id: user._id,
         email: user.email,
@@ -84,6 +136,8 @@ const getMe = asyncHandler(async (req, res) => {
     });
   }
 
+  const enabledModules = await resolveModules(user);
+
   res.json({
     success: true,
     data: {
@@ -92,7 +146,8 @@ const getMe = asyncHandler(async (req, res) => {
       name: user.name,
       role: user.role,
       companyId: user.companyId,
-      lastLoginAt: user.lastLoginAt
+      lastLoginAt: user.lastLoginAt,
+      enabledModules
     }
   });
 });

@@ -1,3 +1,4 @@
+import ResponsiveTable from "../ui/ResponsiveTable";
 import { useState, useEffect, useCallback } from "react";
 import { Select } from "../ui/Select";
 import { Button } from "../ui/Button";
@@ -52,11 +53,11 @@ export default function AttendanceChart() {
 
   const getStatusBadge = (status) => {
     const styles = {
-      CLOCKED_IN:  "bg-green-100 text-green-800",
-      CLOCKED_OUT: "bg-blue-100 text-blue-800",
-      NO_SHOW:     "bg-red-100 text-red-800",
+      CLOCKED_IN:  "bg-[hsl(var(--color-success-soft))] text-[hsl(var(--color-success))]",
+      CLOCKED_OUT: "bg-[hsl(var(--color-primary-soft))] text-[hsl(var(--color-primary))]",
+      NO_SHOW:     "bg-[hsl(var(--color-error-soft))] text-[hsl(var(--color-error))]",
     };
-    return styles[status] || "bg-gray-100 text-gray-800";
+    return styles[status] || "bg-[hsl(var(--color-surface-elevated))] text-[hsl(var(--color-foreground))]";
   };
 
   const formatStatus = (status) => {
@@ -80,14 +81,14 @@ export default function AttendanceChart() {
   const pagedRecords = attendanceRecords.slice(startIdx, startIdx + itemsPerPage);
 
   const attendanceData = [
-    { label: "Working",             value: workingCount, color: "bg-blue-500" },
-    { label: "No Show",             value: noShowCount,  color: "bg-red-500" },
-    { label: "Clocked Out",         value: clockedOut,   color: "bg-green-500" },
-    { label: "No Activity",         value: 0,            color: "bg-gray-400" },
-    { label: "Late Arrival",        value: 0,            color: "bg-orange-400" },
-    { label: "Early Leave",         value: 0,            color: "bg-yellow-400" },
-    { label: "Left Job Site",       value: 0,            color: "bg-purple-400" },
-    { label: "Outside Job Site",    value: 0,            color: "bg-pink-400" },
+    { label: "Working",             value: workingCount, color: "bg-[hsl(var(--color-primary))]" },
+    { label: "No Show",             value: noShowCount,  color: "bg-[hsl(var(--color-error))]" },
+    { label: "Clocked Out",         value: clockedOut,   color: "bg-[hsl(var(--color-success))]" },
+    { label: "No Activity",         value: 0,            color: "bg-[hsl(var(--color-border-strong))]" },
+    { label: "Late Arrival",        value: 0,            color: "bg-[hsl(var(--color-warning))]" },
+    { label: "Early Leave",         value: 0,            color: "bg-[hsl(var(--color-warning))]" },
+    { label: "Left Job Site",       value: 0,            color: "bg-[hsl(var(--color-primary))]" },
+    { label: "Outside Job Site",    value: 0,            color: "bg-[hsl(var(--color-primary))]" },
   ];
 
   const maxVal = Math.max(...attendanceData.map((d) => d.value), 1);
@@ -114,20 +115,20 @@ export default function AttendanceChart() {
   const renderLiveAttendance = () => (
     <div className="bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] rounded-3xl shadow-sm overflow-hidden">
       {/* Toolbar */}
-      <div className="border-b border-[hsl(var(--color-border))] px-4 py-3 flex items-center justify-between">
+      <div className="border-b border-[hsl(var(--color-border))] px-4 py-3 flex flex-wrap gap-3 items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-sm font-medium text-[hsl(var(--color-foreground-secondary))]">Today</span>
           <div className="flex items-center gap-1.5 text-xs text-[hsl(var(--color-foreground-secondary))]">
             <span className="inline-flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Clocked In: {workingCount}
+              <span className="w-2 h-2 rounded-full bg-[hsl(var(--color-success))] inline-block" /> Clocked In: {workingCount}
             </span>
             <span className="mx-1">·</span>
             <span className="inline-flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /> Clocked Out: {clockedOut}
+              <span className="w-2 h-2 rounded-full bg-[hsl(var(--color-primary))] inline-block" /> Clocked Out: {clockedOut}
             </span>
             <span className="mx-1">·</span>
             <span className="inline-flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> No Show: {noShowCount}
+              <span className="w-2 h-2 rounded-full bg-[hsl(var(--color-error))] inline-block" /> No Show: {noShowCount}
             </span>
           </div>
         </div>
@@ -154,21 +155,21 @@ export default function AttendanceChart() {
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-[hsl(var(--color-surface-elevated))] border-b border-[hsl(var(--color-border))]">
-            <tr>
-              <th className="px-4 py-3 text-center text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase tracking-wider border-r border-[hsl(var(--color-border))]" colSpan="4" />
-              <th className="px-4 py-3 text-center text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase tracking-wider border-r border-[hsl(var(--color-border))]" colSpan="2">
+        <ResponsiveTable className="w-full">
+          <thead role="rowgroup" className="bg-[hsl(var(--color-surface-elevated))] border-b border-[hsl(var(--color-border))]">
+            <tr role="row">
+              <th role="columnheader" scope="col" className="px-4 py-3 text-center text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase tracking-wider border-r border-[hsl(var(--color-border))]" colSpan="4" />
+              <th role="columnheader" scope="col" className="px-4 py-3 text-center text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase tracking-wider border-r border-[hsl(var(--color-border))]" colSpan="2">
                 Shift Assignment
               </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase tracking-wider border-r border-[hsl(var(--color-border))]" colSpan="4">
+              <th role="columnheader" scope="col" className="px-4 py-3 text-center text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase tracking-wider border-r border-[hsl(var(--color-border))]" colSpan="4">
                 Clocked Record
               </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase tracking-wider" />
+              <th role="columnheader" scope="col" className="px-4 py-3 text-center text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase tracking-wider" />
             </tr>
-            <tr className="bg-[hsl(var(--color-surface-elevated))]">
+            <tr role="row" className="bg-[hsl(var(--color-surface-elevated))]">
               {liveAttendanceColumns.map((col) => (
-                <th
+                <th role="columnheader" scope="col"
                   key={col}
                   className="px-4 py-3 text-left text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase tracking-wider whitespace-nowrap"
                 >
@@ -177,10 +178,10 @@ export default function AttendanceChart() {
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-[hsl(var(--color-border))]">
+          <tbody role="rowgroup" className="divide-y divide-[hsl(var(--color-border))]">
             {loading ? (
-              <tr>
-                <td colSpan={liveAttendanceColumns.length} className="px-4 py-12 text-center text-sm text-[hsl(var(--color-foreground-muted))]">
+              <tr role="row">
+                <td role="cell" colSpan={liveAttendanceColumns.length} className="px-4 py-12 text-center text-sm text-[hsl(var(--color-foreground-muted))]">
                   <div className="flex items-center justify-center gap-2">
                     <RotateCw className="w-4 h-4 animate-spin" />
                     Loading attendance data…
@@ -188,45 +189,45 @@ export default function AttendanceChart() {
                 </td>
               </tr>
             ) : pagedRecords.length === 0 ? (
-              <tr>
-                <td colSpan={liveAttendanceColumns.length} className="px-4 py-12 text-center text-sm text-[hsl(var(--color-foreground-muted))]">
+              <tr role="row">
+                <td role="cell" colSpan={liveAttendanceColumns.length} className="px-4 py-12 text-center text-sm text-[hsl(var(--color-foreground-muted))]">
                   No shifts scheduled for today
                 </td>
               </tr>
             ) : (
               pagedRecords.map((record) => (
-                <tr key={record.id} className="hover:bg-[hsl(var(--color-surface-elevated))] transition-colors">
-                  <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
+                <tr role="row" key={record.id} className="hover:bg-[hsl(var(--color-surface-elevated))] transition-colors">
+                  <td role="cell" data-label="Date" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
                     {formatDate(record.date)}
                   </td>
-                  <td className="px-4 py-3 text-sm font-medium text-[hsl(var(--color-foreground))] whitespace-nowrap">
+                  <td role="cell" data-label="Employee" data-field="title" className="px-4 py-3 text-sm font-medium text-[hsl(var(--color-foreground))] whitespace-nowrap">
                     {record.employee}
                   </td>
-                  <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
+                  <td role="cell" data-label="Mobile" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
                     {record.mobile}
                   </td>
-                  <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
+                  <td role="cell" data-label="Site" data-field="wide" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
                     {record.site}
                   </td>
-                  <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
+                  <td role="cell" data-label="Scheduled time" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
                     {record.shiftTime}
                   </td>
-                  <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
+                  <td role="cell" data-label="Scheduled hours" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
                     {record.shiftHrs ?? "—"}
                   </td>
-                  <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
+                  <td role="cell" data-label="Clock in" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
                     {formatTime(record.clockIn)}
                   </td>
-                  <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
+                  <td role="cell" data-label="Clock out" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
                     {formatTime(record.clockOut)}
                   </td>
-                  <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
+                  <td role="cell" data-label="Break" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
                     {record.breakMins ? `${record.breakMins}m` : "—"}
                   </td>
-                  <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
+                  <td role="cell" data-label="Total hours" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
                     {record.totalHrs ?? "—"}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                  <td role="cell" data-label="Status" data-field="status" className="px-4 py-3 whitespace-nowrap">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(record.status)}`}>
                       {formatStatus(record.status)}
                     </span>
@@ -235,11 +236,11 @@ export default function AttendanceChart() {
               ))
             )}
           </tbody>
-        </table>
+        </ResponsiveTable>
       </div>
 
       {/* Footer */}
-      <div className="border-t border-[hsl(var(--color-border))] px-4 py-3 flex items-center justify-between">
+      <div className="data-pagination">
         <div className="text-sm text-[hsl(var(--color-foreground-secondary))] italic">
           {totalShifts === 0
             ? "Showing 0 to 0 of 0 entries"
@@ -354,7 +355,7 @@ export default function AttendanceChart() {
           onClick={() => setViewMode("shift")}
           className={`px-5 py-2.5 text-sm font-semibold rounded-xl transition-all ${
             viewMode === "shift"
-              ? "bg-blue-500 text-white shadow-md hover:bg-blue-600"
+              ? "bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] shadow-md hover:bg-[hsl(var(--color-primary))]"
               : "bg-[hsl(var(--color-card))] text-[hsl(var(--color-foreground-secondary))] border border-[hsl(var(--color-border))] hover:bg-[hsl(var(--color-surface-elevated))] shadow-sm"
           }`}
         >
@@ -364,7 +365,7 @@ export default function AttendanceChart() {
           onClick={() => setViewMode("live")}
           className={`px-5 py-2.5 text-sm font-semibold rounded-xl transition-all ${
             viewMode === "live"
-              ? "bg-blue-500 text-white shadow-md hover:bg-blue-600"
+              ? "bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] shadow-md hover:bg-[hsl(var(--color-primary))]"
               : "bg-[hsl(var(--color-card))] text-[hsl(var(--color-foreground-secondary))] border border-[hsl(var(--color-border))] hover:bg-[hsl(var(--color-surface-elevated))] shadow-sm"
           }`}
         >

@@ -25,8 +25,9 @@ const createEmployeeValidation = [
 
   body('phone')
     .optional({ nullable: true, checkFalsy: true })
-    .isMobilePhone()
-    .withMessage('Phone must be a valid mobile number'),
+    .trim()
+    .matches(/^[\d\s\-+()]{6,20}$/)
+    .withMessage('Phone can contain digits, spaces and + - ( ) only'),
 
   body('position')
     .notEmpty()
@@ -40,7 +41,27 @@ const createEmployeeValidation = [
   body('isActive')
     .optional()
     .isBoolean()
-    .withMessage('isActive must be a boolean')
+    .withMessage('isActive must be a boolean'),
+
+  // Optional. Supplying one creates a portal login for this employee; leaving it
+  // blank creates an employee record with no login at all.
+  body('password')
+    .optional({ nullable: true, checkFalsy: true })
+    .isLength({ min: 8 })
+    .withMessage('Password must be at least 8 characters'),
+
+  body('address').optional({ nullable: true, checkFalsy: true }).trim(),
+  body('townSuburb').optional({ nullable: true, checkFalsy: true }).trim(),
+  body('state').optional({ nullable: true, checkFalsy: true }).trim(),
+  body('postalCode').optional({ nullable: true, checkFalsy: true }).trim(),
+
+  body('emergencyContact.name').optional({ nullable: true, checkFalsy: true }).trim(),
+  body('emergencyContact.relationship').optional({ nullable: true, checkFalsy: true }).trim(),
+  body('emergencyContact.phone')
+    .optional({ nullable: true, checkFalsy: true })
+    .trim()
+    .matches(/^[\d\s\-+()]{6,20}$/)
+    .withMessage('Emergency phone can contain digits, spaces and + - ( ) only')
 ];
 
 // Update employee validation
@@ -83,7 +104,27 @@ const updateEmployeeValidation = [
   body('isActive')
     .optional()
     .isBoolean()
-    .withMessage('isActive must be a boolean')
+    .withMessage('isActive must be a boolean'),
+
+  // Optional. Supplying one creates a portal login for this employee; leaving it
+  // blank creates an employee record with no login at all.
+  body('password')
+    .optional({ nullable: true, checkFalsy: true })
+    .isLength({ min: 8 })
+    .withMessage('Password must be at least 8 characters'),
+
+  body('address').optional({ nullable: true, checkFalsy: true }).trim(),
+  body('townSuburb').optional({ nullable: true, checkFalsy: true }).trim(),
+  body('state').optional({ nullable: true, checkFalsy: true }).trim(),
+  body('postalCode').optional({ nullable: true, checkFalsy: true }).trim(),
+
+  body('emergencyContact.name').optional({ nullable: true, checkFalsy: true }).trim(),
+  body('emergencyContact.relationship').optional({ nullable: true, checkFalsy: true }).trim(),
+  body('emergencyContact.phone')
+    .optional({ nullable: true, checkFalsy: true })
+    .trim()
+    .matches(/^[\d\s\-+()]{6,20}$/)
+    .withMessage('Emergency phone can contain digits, spaces and + - ( ) only')
 ];
 
 // Delete employee validation

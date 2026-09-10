@@ -1,3 +1,5 @@
+import ShiftAgenda from "../../components/scheduler/ShiftAgenda";
+import PageHeader from "../../components/layout/PageHeader";
 import { useState, useEffect, useMemo } from "react";
 import {
   ChevronLeft,
@@ -11,8 +13,10 @@ import {
   CloudRain,
   CloudSnow,
   CloudDrizzle,
+  CalendarDays,
 } from "lucide-react";
 import { userApi, weatherApi } from "../../lib/api";
+import { formatTime as orgTime } from "../../lib/format";
 
 export default function MyRoster() {
   const [viewMode, setViewMode] = useState("week");
@@ -146,12 +150,7 @@ export default function MyRoster() {
     });
   };
 
-  const formatTime = (iso) =>
-    new Date(iso).toLocaleTimeString("en-AU", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
+  const formatTime = (iso) => orgTime(iso, "");
 
   const calcDuration = (start, end) =>
     ((new Date(end) - new Date(start)) / (1000 * 60 * 60)).toFixed(1);
@@ -182,10 +181,11 @@ export default function MyRoster() {
   );
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-[hsl(var(--color-background))]">
+    <div className="data-page flex flex-col h-full min-h-0">
 
+      <PageHeader icon={CalendarDays} title="My roster" eyebrow="YOUR WORKING WEEK" description="Know where to be, and when." />
       {/* ── Toolbar ── */}
-      <div className="flex-shrink-0 border-b border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))] px-3 py-2">
+      <div className="data-page-header flex-shrink-0 px-3 py-2">
         {/* Row 1: title + view selector */}
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-2">
@@ -206,6 +206,7 @@ export default function MyRoster() {
               <option value="4weeks">4 Weeks</option>
             </select>
             <button
+              aria-label="Refresh roster"
               onClick={() => window.location.reload()}
               className="p-1.5 border border-[hsl(var(--color-border))] rounded-md text-[hsl(var(--color-foreground-secondary))] hover:bg-[hsl(var(--color-surface-elevated))] transition-colors"
             >
@@ -218,6 +219,7 @@ export default function MyRoster() {
         <div className="flex items-center gap-2">
           <button
             onClick={handlePrev}
+            aria-label="Previous period"
             className="p-1.5 border border-[hsl(var(--color-border))] rounded-md text-[hsl(var(--color-foreground-secondary))] hover:bg-[hsl(var(--color-surface-elevated))] transition-colors flex-shrink-0"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -234,6 +236,7 @@ export default function MyRoster() {
 
           <button
             onClick={handleNext}
+            aria-label="Next period"
             className="p-1.5 border border-[hsl(var(--color-border))] rounded-md text-[hsl(var(--color-foreground-secondary))] hover:bg-[hsl(var(--color-surface-elevated))] transition-colors flex-shrink-0"
           >
             <ChevronRight className="w-4 h-4" />
@@ -244,7 +247,7 @@ export default function MyRoster() {
       {/* ── Summary pills (mobile-friendly) ── */}
       <div className="flex-shrink-0 flex items-center gap-3 px-3 py-2 border-b border-[hsl(var(--color-border))] bg-[hsl(var(--color-surface-elevated))]">
         <div className="flex items-center gap-1.5 text-xs text-[hsl(var(--color-foreground-secondary))]">
-          <div className="w-2 h-2 rounded-full bg-green-500" />
+          <div className="w-2 h-2 rounded-full bg-[hsl(var(--color-success))]" />
           <span><span className="font-semibold text-[hsl(var(--color-foreground))]">{shifts.length}</span> shifts</span>
         </div>
         <div className="flex items-center gap-1.5 text-xs text-[hsl(var(--color-foreground-secondary))]">
@@ -253,8 +256,9 @@ export default function MyRoster() {
         </div>
       </div>
 
+      <ShiftAgenda dates={dateColumns.map(col => col.date)} shifts={shifts} loading={loading} />
       {/* ── Calendar ── */}
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div className="agenda-desktop flex-1 min-h-0 overflow-auto">
         {loading ? (
           <div className="flex items-center justify-center h-full py-16">
             <div className="flex flex-col items-center gap-2">
@@ -334,7 +338,7 @@ export default function MyRoster() {
                                     </div>
                                   )}
                                 </div>
-                                <div className="bg-green-500 text-white text-[10px] font-medium text-center py-0.5 tracking-wide">
+                                <div className="bg-[hsl(var(--color-success))] text-[hsl(var(--color-success-foreground))] text-[10px] font-medium text-center py-0.5 tracking-wide">
                                   CONFIRMED
                                 </div>
                               </div>

@@ -1,3 +1,5 @@
+import Modal from "../../components/ui/Modal";
+import ResponsiveTable from "../../components/ui/ResponsiveTable";
 import { useState, useEffect, useCallback } from "react";
 import { Plus, RotateCcw, X, Ban } from "lucide-react";
 import toast from "react-hot-toast";
@@ -7,6 +9,7 @@ import { Select } from "../../components/ui/Select";
 import { Input } from "../../components/ui/Input";
 import { Textarea } from "../../components/ui/Textarea";
 import { Label } from "../../components/ui/Label";
+import { formatDate as orgDate } from "../../lib/format";
 
 const TYPE_LABELS = {
   annual: "Annual Leave",
@@ -16,14 +19,14 @@ const TYPE_LABELS = {
 };
 
 const STATUS_STYLES = {
-  pending:   "bg-yellow-100 text-yellow-800",
-  approved:  "bg-green-100 text-green-800",
-  declined:  "bg-red-100 text-red-800",
-  cancelled: "bg-gray-100 text-gray-600",
+  pending:   "bg-[hsl(var(--color-warning-soft))] text-[hsl(var(--color-warning))]",
+  approved:  "bg-[hsl(var(--color-success-soft))] text-[hsl(var(--color-success))]",
+  declined:  "bg-[hsl(var(--color-error-soft))] text-[hsl(var(--color-error))]",
+  cancelled: "bg-[hsl(var(--color-surface-elevated))] text-[hsl(var(--color-foreground-secondary))]",
 };
 
 const fmt = (d) =>
-  d ? new Date(d).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+  d ? orgDate(d) : "—";
 
 function calcDays(start, end) {
   if (!start || !end) return 0;
@@ -74,11 +77,11 @@ function NewLeaveModal({ onClose, onSuccess }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-[hsl(var(--color-card))] rounded-lg shadow-xl w-full max-w-lg">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[hsl(var(--color-border))]">
+    <Modal onClose={onClose} label="Request leave">
+      <div className="modal-surface w-full max-w-lg">
+        <div className="modal-header flex items-center justify-between px-5 py-4 border-b">
           <h2 className="text-base font-semibold text-[hsl(var(--color-foreground))]">Request Leave</h2>
-          <button onClick={onClose} className="text-[hsl(var(--color-foreground-secondary))] hover:text-[hsl(var(--color-foreground))]">
+          <button type="button" aria-label="Close dialog" onClick={onClose} className="text-[hsl(var(--color-foreground-secondary))] hover:text-[hsl(var(--color-foreground))]">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -134,18 +137,18 @@ function NewLeaveModal({ onClose, onSuccess }) {
           </div>
         </div>
 
-        <div className="px-5 py-4 border-t border-[hsl(var(--color-border))] flex justify-end gap-2">
+        <div className="modal-footer px-5 py-4 border-t flex justify-end gap-2">
           <Button variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
           <Button
             onClick={handleSubmit}
             disabled={submitting}
-            className="bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary-dark))] text-white"
+            className="bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary-dark))] text-[hsl(var(--color-primary-foreground))]"
           >
             {submitting ? "Submitting..." : "Submit Request"}
           </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -190,9 +193,9 @@ export default function MyLeave() {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="data-page flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="bg-[hsl(var(--color-primary))] text-white px-5 py-4 flex items-center justify-between flex-shrink-0">
+      <div className="data-page-header px-5 py-4 flex items-center justify-between flex-shrink-0">
         <h1 className="text-base font-semibold">My Leave</h1>
         <button onClick={fetchLeaves} className="p-1.5 hover:bg-[hsl(var(--color-primary-dark))] rounded transition-colors">
           <RotateCcw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -215,7 +218,7 @@ export default function MyLeave() {
 
         <Button
           onClick={() => setShowModal(true)}
-          className="bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary-dark))] text-white flex items-center gap-2"
+          className="bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary-dark))] text-[hsl(var(--color-primary-foreground))] flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
           Request Leave
@@ -233,7 +236,7 @@ export default function MyLeave() {
             <p className="text-sm">You have no leave requests yet.</p>
             <Button
               onClick={() => setShowModal(true)}
-              className="bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary-dark))] text-white flex items-center gap-2"
+              className="bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary-dark))] text-[hsl(var(--color-primary-foreground))] flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
               Request Leave
@@ -242,51 +245,51 @@ export default function MyLeave() {
         ) : (
           <div className="bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] rounded-lg overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-[hsl(var(--color-surface-elevated))] border-b border-[hsl(var(--color-border))]">
-                  <tr>
+              <ResponsiveTable className="w-full">
+                <thead role="rowgroup" className="bg-[hsl(var(--color-surface-elevated))] border-b border-[hsl(var(--color-border))]">
+                  <tr role="row">
                     {["Leave Type", "Start Date", "End Date", "Days", "Submitted", "Status", "Manager Note", "Action"].map((col) => (
-                      <th key={col} className="px-4 py-3 text-left text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase tracking-wider whitespace-nowrap">
+                      <th role="columnheader" scope="col" key={col} className="px-4 py-3 text-left text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase tracking-wider whitespace-nowrap">
                         {col}
                       </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[hsl(var(--color-border))]">
+                <tbody role="rowgroup" className="divide-y divide-[hsl(var(--color-border))]">
                   {leaves.map((leave) => (
-                    <tr key={leave._id} className="hover:bg-[hsl(var(--color-surface-elevated))]">
-                      <td className="px-4 py-3 text-sm font-medium text-[hsl(var(--color-foreground))] whitespace-nowrap">
+                    <tr role="row" key={leave._id} className="hover:bg-[hsl(var(--color-surface-elevated))]">
+                      <td role="cell" data-label="Leave type" data-field="title" className="px-4 py-3 text-sm font-medium text-[hsl(var(--color-foreground))] whitespace-nowrap">
                         {TYPE_LABELS[leave.leaveType] || leave.leaveType}
                       </td>
-                      <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
+                      <td role="cell" data-label="Start date" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
                         {fmt(leave.startDate)}
                       </td>
-                      <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
+                      <td role="cell" data-label="End date" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
                         {fmt(leave.endDate)}
                       </td>
-                      <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
+                      <td role="cell" data-label="Days" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
                         {leave.periodDays ?? "—"}
                       </td>
-                      <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
+                      <td role="cell" data-label="Submitted" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
                         {fmt(leave.createdAt)}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLES[leave.status] || "bg-gray-100 text-gray-600"}`}>
+                      <td role="cell" data-label="Status" data-field="status" className="px-4 py-3 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLES[leave.status] || "bg-[hsl(var(--color-surface-elevated))] text-[hsl(var(--color-foreground-secondary))]"}`}>
                           {leave.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] max-w-[200px] truncate">
+                      <td role="cell" data-label="Manager note" data-field="wide" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] max-w-[200px] truncate">
                         {leave.actionNote || "—"}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td role="cell" data-label="Actions" data-field="actions" className="px-4 py-3 whitespace-nowrap">
                         {["pending", "approved"].includes(leave.status) ? (
                           <button
                             onClick={() => handleCancel(leave._id)}
                             disabled={cancellingId === leave._id}
                             title="Cancel request"
-                            className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 disabled:opacity-50 transition-colors"
+                            className="p-1.5 rounded bg-[hsl(var(--color-surface-elevated))] hover:bg-[hsl(var(--color-surface-elevated))] text-[hsl(var(--color-foreground-secondary))] disabled:opacity-50 transition-colors"
                           >
-                            <Ban className="w-3.5 h-3.5" />
+                            <Ban className="w-3.5 h-3.5" /><span className="mobile-action-label">Cancel request</span>
                           </button>
                         ) : (
                           <span className="text-xs text-[hsl(var(--color-foreground-muted))]">—</span>
@@ -295,7 +298,7 @@ export default function MyLeave() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </ResponsiveTable>
             </div>
           </div>
         )}

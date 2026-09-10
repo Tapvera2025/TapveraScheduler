@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import Modal from "../ui/Modal";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
@@ -19,10 +20,6 @@ export default function AddLeaveModal({ open, onClose, onSuccess }) {
   });
   const [employees, setEmployees] = useState([]);
   const [submitting, setSubmitting] = useState(false);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const modalRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
@@ -35,16 +32,7 @@ export default function AddLeaveModal({ open, onClose, onSuccess }) {
       .catch(() => {});
   }, [open]);
 
-  const handleMouseDown = (e) => {
-    if (e.target.closest(".modal-header")) {
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
-    }
-  };
-  const handleMouseMove = (e) => {
-    if (isDragging) setPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
-  };
-  const handleMouseUp = () => setIsDragging(false);
+
 
   const calcDays = () => {
     if (!formData.startDate || !formData.endDate) return 0;
@@ -95,30 +83,18 @@ export default function AddLeaveModal({ open, onClose, onSuccess }) {
   const days = calcDays();
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-    >
+    <Modal onClose={onClose} label="New leave">
       <div
-        ref={modalRef}
-        className="fixed bg-[hsl(var(--color-card))] rounded-lg shadow-xl w-full max-w-2xl"
-        style={{
-          left: `calc(50% + ${position.x}px)`,
-          top: `calc(50% + ${position.y}px)`,
-          transform: "translate(-50%, -50%)",
-          cursor: isDragging ? "grabbing" : "default",
-        }}
+        className="modal-surface modal-responsive w-full max-w-2xl"
       >
         {/* Header */}
         <div
-          className="modal-header flex items-center justify-between px-6 py-4 border-b border-[hsl(var(--color-border))] cursor-grab active:cursor-grabbing"
-          onMouseDown={handleMouseDown}
+          className="modal-header flex items-center justify-between px-6 py-4 border-b border-[hsl(var(--color-border))]"
         >
           <h2 className="text-lg font-semibold text-[hsl(var(--color-foreground))]">
             New Leave Request
           </h2>
-          <button onClick={onClose} className="text-[hsl(var(--color-foreground-secondary))] hover:text-[hsl(var(--color-foreground))]">
+          <button type="button" aria-label="Close dialog" onClick={onClose} className="text-[hsl(var(--color-foreground-secondary))] hover:text-[hsl(var(--color-foreground))]">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -128,7 +104,7 @@ export default function AddLeaveModal({ open, onClose, onSuccess }) {
           {/* Employee + Type */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Employee</Label>
+              <Label>Employee *</Label>
               <Select
                 value={formData.employeeId}
                 onChange={(e) => setFormData({ ...formData, employeeId: e.target.value })}
@@ -142,7 +118,7 @@ export default function AddLeaveModal({ open, onClose, onSuccess }) {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Leave Type</Label>
+              <Label>Leave Type *</Label>
               <Select
                 value={formData.leaveType}
                 onChange={(e) => setFormData({ ...formData, leaveType: e.target.value })}
@@ -159,7 +135,7 @@ export default function AddLeaveModal({ open, onClose, onSuccess }) {
           {/* Dates */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Start Date</Label>
+              <Label>Start Date *</Label>
               <Input
                 type="date"
                 value={formData.startDate}
@@ -167,7 +143,7 @@ export default function AddLeaveModal({ open, onClose, onSuccess }) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>End Date</Label>
+              <Label>End Date *</Label>
               <Input
                 type="date"
                 value={formData.endDate}
@@ -208,24 +184,24 @@ export default function AddLeaveModal({ open, onClose, onSuccess }) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-[hsl(var(--color-border))] flex items-center justify-end gap-2">
+        <div className="modal-footer px-6 py-4 border-t flex items-center justify-end gap-2">
           <Button variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
           <Button
             onClick={() => handleSubmit(false)}
             disabled={submitting}
-            className="bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary-dark))] text-white"
+            className="bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary-dark))] text-[hsl(var(--color-primary-foreground))]"
           >
             {submitting ? "Saving..." : "Save"}
           </Button>
           <Button
             onClick={() => handleSubmit(true)}
             disabled={submitting}
-            className="bg-green-600 hover:bg-green-700 text-white"
+            className="bg-[hsl(var(--color-success))] hover:bg-[hsl(var(--color-success))] text-[hsl(var(--color-success-foreground))]"
           >
             {submitting ? "Saving..." : "Save & Approve"}
           </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

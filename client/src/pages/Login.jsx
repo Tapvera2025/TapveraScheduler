@@ -1,16 +1,20 @@
+import Brand from "../components/layout/Brand";
+import ThemeToggle from "../components/ui/ThemeToggle";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Input } from "../components/ui/Input";
 import { Button } from "../components/ui/Button";
 import { Label } from "../components/ui/Label";
-import { Lock, User, Eye, EyeOff } from "lucide-react";
+import { Lock, Mail, Eye, EyeOff, ArrowRight, ArrowUpRight, Check, CalendarDays, LoaderCircle } from "lucide-react";
 import { userApi } from "../lib/api";
 import { toast } from "react-hot-toast";
 import { useAuthStore } from "../store/authStore";
+import { useModuleStore } from "../store/moduleStore";
 
 export default function Login() {
   const navigate = useNavigate();
   const { setAuth } = useAuthStore();
+  const { setModules } = useModuleStore();
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -31,11 +35,12 @@ export default function Login() {
         password: formData.password,
       });
 
-      // Store token and user data
-      const { token, user } = response.data.data;
+      // Store token, user data and the organisation's enabled modules
+      const { token, user, enabledModules } = response.data.data;
 
       // Store in auth store (this persists to localStorage automatically via zustand persist)
       setAuth(user, token);
+      setModules(enabledModules || []);
 
       // Also store in localStorage for backward compatibility
       localStorage.setItem("token", token);
@@ -47,10 +52,12 @@ export default function Login() {
       toast.success("Login successful!");
 
       // Navigate based on role
-      if (user.role === "ADMIN" || user.role === "MANAGER") {
+      if (user.role === "MASTER") {
+        navigate("/master");
+      } else if (user.role === "ADMIN" || user.role === "MANAGER") {
         navigate("/dashboard");
       } else {
-        navigate("/user/roster");
+        navigate("/user");
       }
     } catch (err) {
       const errorMessage = err.response?.data?.message || "Invalid email or password";
@@ -72,120 +79,41 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--color-background))] px-4 sm:px-6">
-      <div className="w-full max-w-md">
-        {/* Card */}
-        <div className="bg-[hsl(var(--color-card))] rounded-2xl shadow-xl border border-[hsl(var(--color-border))] p-6 sm:p-8">
-          {/* Logo/Title */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-[hsl(var(--color-primary))] to-[hsl(var(--color-primary-hover))] rounded-2xl mb-4 shadow-lg">
-              <Lock className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
+    <div className="login-page">
+      <header className="login-header"><Brand /><div className="login-header-right"><span>Your people. Your rhythm.</span><ThemeToggle /></div></header>
+      <main className="login-main">
+        <section className="login-story" aria-label="Welcome to Tapvera Scheduler">
+          <div className="login-story-top"><span className="story-edition">THE WORKFORCE, WELL ORGANISED</span><ArrowUpRight size={22} strokeWidth={1.4} /></div>
+          <h1>People in place.<br />Work in <em>motion.</em></h1>
+          <p className="login-story-description">A little less organising.<br />A lot more getting things done.</p>
+          <div className="schedule-illustration" aria-hidden="true">
+            <div className="illustration-top"><span><CalendarDays size={15} /> A week, in balance</span><span className="illustration-badge"><span /> All in place</span></div>
+            <div className="illustration-grid"><div className="illustration-days"><span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span></div>
+              <div className="illustration-row"><div className="shift-block shift-a"><span className="mini-avatar">JL</span><span>Morning shift<small>08:00 — 16:00</small></span><Check size={14} /></div></div>
+              <div className="illustration-row"><div className="shift-block shift-b"><span className="mini-avatar">AK</span><span>On-site team<small>09:00 — 17:00</small></span><Check size={14} /></div></div>
+              <div className="illustration-row"><div className="shift-block shift-c"><span className="mini-avatar">MR</span><span>Evening shift<small>14:00 — 22:00</small></span><Check size={14} /></div></div>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-[hsl(var(--color-foreground))] mb-2">
-              Roster Mechanic
-            </h1>
-            <p className="text-[hsl(var(--color-foreground-secondary))] text-sm sm:text-base">Sign in to your account</p>
+            <div className="illustration-foot"><span className="stacked-avatars"><i>JL</i><i>AK</i><i>MR</i></span><span>Good work starts with a good plan.</span></div>
           </div>
-
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Email */}
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <Input
-                  id="email"
-                  name="email"
-                  type="email"
-                  placeholder="Enter your email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  className="pl-10"
-                  required
-                  autoComplete="email"
-                />
-              </div>
-            </div>
-
-            {/* Password */}
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <Input
-                  id="password"
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Enter your password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  className="pl-10 pr-10"
-                  required
-                  autoComplete="current-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  {showPassword ? (
-                    <EyeOff className="w-5 h-5" />
-                  ) : (
-                    <Eye className="w-5 h-5" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Error Message */}
-            {error && (
-              <div className="bg-[hsl(var(--color-error-soft))] border border-[hsl(var(--color-error))] text-[hsl(var(--color-error))] px-4 py-3 rounded-xl text-sm">
-                {error}
-              </div>
-            )}
-
-            {/* Remember Me & Forgot Password */}
-            <div className="flex items-center justify-between text-sm">
-              <div className="flex items-center">
-                <input
-                  id="remember"
-                  name="remember"
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-[hsl(var(--color-border))] text-[hsl(var(--color-primary))] focus:ring-[hsl(var(--color-primary))]"
-                />
-                <label
-                  htmlFor="remember"
-                  className="ml-2 block text-[hsl(var(--color-foreground-secondary))]"
-                >
-                  Remember me
-                </label>
-              </div>
-              <button
-                type="button"
-                className="font-medium text-[hsl(var(--color-primary))] hover:text-[hsl(var(--color-primary-hover))] transition-colors"
-              >
-                Forgot password?
-              </button>
-            </div>
-
-            {/* Submit Button */}
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={isLoading}
-            >
-              {isLoading ? "Signing in..." : "Sign in"}
-            </Button>
-          </form>
-
-          {/* Demo Credentials Info */}
-          <div className="mt-6 p-4 bg-[hsl(var(--color-surface-elevated))] rounded-xl border border-[hsl(var(--color-border))]">
-            <p className="text-xs font-semibold text-[hsl(var(--color-foreground))] mb-2">Login with your account:</p>
-            <p className="text-xs text-[hsl(var(--color-foreground-secondary))]">Enter your registered email and password to sign in</p>
+          <div className="login-story-footer"><span>Built for teams that keep things moving.</span><span>01 — 03</span></div>
+        </section>
+        <section className="login-form-section">
+          <div className="login-form-inner">
+            <span className="eyebrow">YOUR WORKSPACE AWAITS</span>
+            <h2>Welcome back.</h2>
+            <p className="login-subtitle">Sign in and pick up where your team left off.</p>
+            <form onSubmit={handleSubmit} className="login-form">
+              <div className="space-y-2"><Label htmlFor="email">Work email</Label><div className="relative"><Mail className="login-input-icon" size={17} /><Input id="email" name="email" type="email" placeholder="you@company.com" value={formData.email} onChange={handleChange} className="pl-11 h-12" required autoComplete="username" autoCapitalize="none" spellCheck={false} /></div></div>
+              <div className="space-y-2"><Label htmlFor="password">Password</Label><div className="relative"><Lock className="login-input-icon" size={17} /><Input id="password" name="password" type={showPassword ? "text" : "password"} placeholder="Enter your password" value={formData.password} onChange={handleChange} className="pl-11 pr-12 h-12" required autoComplete="current-password" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="login-password-toggle" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button></div></div>
+              {error && <div className="login-error" role="alert">{error}</div>}
+              <Button type="submit" size="lg" className="w-full justify-between" disabled={isLoading}>{isLoading ? "Signing you in…" : "Sign in to your workspace"}{isLoading ? <LoaderCircle size={17} className="animate-spin" /> : <ArrowRight size={17} />}</Button>
+            </form>
+            <div className="login-help"><span>Need a hand signing in?</span><p>Contact your organisation administrator for access or a password reset.</p></div>
+            <div className="login-security"><Lock size={12} /><span>Your team's workspace. Securely connected.</span></div>
           </div>
-        </div>
-      </div>
+        </section>
+      </main>
+      <footer className="login-footer"><span>© {new Date().getFullYear()} Tapvera Scheduler</span><span>Make room for better work.</span></footer>
     </div>
   );
 }

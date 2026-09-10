@@ -160,6 +160,8 @@ const getCurrentStatus = asyncHandler(async (req, res) => {
 
   const context = {
     companyId: req.user.companyId,
+    role: req.user.role,
+    userId: req.user.userId,
   };
 
   const status = await clockInOutService.getCurrentStatus(context, employeeId);
@@ -188,6 +190,8 @@ const getMyHistory = asyncHandler(async (req, res) => {
 
   const context = {
     companyId: req.user.companyId,
+    role: req.user.role,
+    userId: req.user.userId,
   };
 
   const result = await clockInOutService.getEmployeeHistory(context, employeeId, {

@@ -1,3 +1,5 @@
+import Pagination from "../ui/Pagination";
+import ResponsiveTable, { MobileTableSort } from "../ui/ResponsiveTable";
 import SiteRow from "./SiteRow";
 import SortableHeader from "../ui/SortableHeader";
 import { useTableSort } from "../../hooks/useTableSort";
@@ -5,11 +7,12 @@ import { useTableSort } from "../../hooks/useTableSort";
 export default function SitesTable({
   sites,
   loading,
-  showInactive,
+  pagination,
+  onPageChange,
   onSiteClick,
   onMapClick,
 }) {
-  const { sortedData, requestSort, getSortIndicator } = useTableSort(sites, {
+  const { sortedData, sortConfig, requestSort, getSortIndicator } = useTableSort(sites, {
     defaultColumn: 'siteLocationName',
     defaultDirection: 'asc',
   });
@@ -17,7 +20,7 @@ export default function SitesTable({
   if (loading) {
     return (
       <div className="bg-[hsl(var(--color-card))] rounded-lg sm:rounded-xl shadow-sm p-8 text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[hsl(var(--color-primary))] mx-auto"></div>
         <p className="mt-4 text-[hsl(var(--color-foreground-secondary))]">
           Loading sites...
         </p>
@@ -39,22 +42,16 @@ export default function SitesTable({
     );
   }
 
-  const displayedSites = sites.length;
 
   return (
     <div className="bg-[hsl(var(--color-card))] rounded-lg sm:rounded-xl shadow-sm">
-      {/* Scrollable table container */}
+      <MobileTableSort columns={[["siteLocationName", "Site name"], ["shortName", "Short name"], ["client", "Client"], ["state", "State"], ["status", "Status"]]} sortConfig={sortConfig} onSort={requestSort} />
       <div className="overflow-x-auto overflow-y-visible">
-        <table className="w-full text-sm min-w-[1000px]">
-          <thead className="bg-[hsl(var(--color-surface-elevated))] border-b border-[hsl(var(--color-border))]">
-            <tr className="text-[hsl(var(--color-foreground-secondary))] text-xs">
-              <th className="px-2 sm:px-3 py-2 sm:py-3 text-center w-10 sm:w-12 sticky left-0 bg-[hsl(var(--color-surface-elevated))] z-[5]">
-                <input
-                  type="checkbox"
-                  className="rounded border-[hsl(var(--color-border))]"
-                />
-              </th>
-              <th className="px-2 sm:px-3 py-2 sm:py-3 text-left">
+        <ResponsiveTable className="w-full text-sm min-w-[1000px]">
+          <thead role="rowgroup" className="bg-[hsl(var(--color-surface-elevated))] border-b border-[hsl(var(--color-border))]">
+            <tr role="row" className="text-[hsl(var(--color-foreground-secondary))] text-xs">
+              
+              <th role="columnheader" scope="col" className="px-2 sm:px-3 py-2 sm:py-3 text-left">
                 <SortableHeader
                   label="Site/Location Name"
                   sortKey="siteLocationName"
@@ -62,7 +59,7 @@ export default function SitesTable({
                   sortDirection={getSortIndicator('siteLocationName')}
                 />
               </th>
-              <th className="px-2 sm:px-3 py-2 sm:py-3 text-left">
+              <th role="columnheader" scope="col" className="px-2 sm:px-3 py-2 sm:py-3 text-left">
                 <SortableHeader
                   label="Short Name"
                   sortKey="shortName"
@@ -70,7 +67,7 @@ export default function SitesTable({
                   sortDirection={getSortIndicator('shortName')}
                 />
               </th>
-              <th className="px-2 sm:px-3 py-2 sm:py-3 text-left">
+              <th role="columnheader" scope="col" className="px-2 sm:px-3 py-2 sm:py-3 text-left">
                 <SortableHeader
                   label="Client"
                   sortKey="client"
@@ -78,7 +75,7 @@ export default function SitesTable({
                   sortDirection={getSortIndicator('client')}
                 />
               </th>
-              <th className="px-2 sm:px-3 py-2 sm:py-3 text-left">
+              <th role="columnheader" scope="col" className="px-2 sm:px-3 py-2 sm:py-3 text-left">
                 <SortableHeader
                   label="State"
                   sortKey="state"
@@ -86,7 +83,7 @@ export default function SitesTable({
                   sortDirection={getSortIndicator('state')}
                 />
               </th>
-              <th className="px-2 sm:px-3 py-2 sm:py-3 text-left">
+              <th role="columnheader" scope="col" className="px-2 sm:px-3 py-2 sm:py-3 text-left">
                 <SortableHeader
                   label="Status"
                   sortKey="status"
@@ -94,19 +91,19 @@ export default function SitesTable({
                   sortDirection={getSortIndicator('status')}
                 />
               </th>
-              <th className="px-2 sm:px-3 py-2 sm:py-3 text-center whitespace-nowrap">
+              <th role="columnheader" scope="col" className="px-2 sm:px-3 py-2 sm:py-3 text-center whitespace-nowrap">
                 Expiry in
                 <br />
                 30 Days
               </th>
-              <th className="px-2 sm:px-3 py-2 sm:py-3 text-center w-16"></th>
-              <th className="px-2 sm:px-3 py-2 sm:py-3 text-right w-20 sm:w-24 sticky right-0 bg-[hsl(var(--color-surface-elevated))] z-[5]">
+              <th role="columnheader" scope="col" className="px-2 sm:px-3 py-2 sm:py-3 text-center w-16"></th>
+              <th role="columnheader" scope="col" className="px-2 sm:px-3 py-2 sm:py-3 text-right w-20 sm:w-24 sticky right-0 bg-[hsl(var(--color-surface-elevated))] z-[5]">
                 Actions
               </th>
             </tr>
           </thead>
 
-          <tbody className="divide-y divide-[hsl(var(--color-border))]">
+          <tbody role="rowgroup" className="divide-y divide-[hsl(var(--color-border))]">
             {sortedData.map((site, index) => (
               <SiteRow
                 key={site.id || site._id || `site-${index}`}
@@ -116,33 +113,10 @@ export default function SitesTable({
               />
             ))}
           </tbody>
-        </table>
+        </ResponsiveTable>
       </div>
 
-      {/* Pagination */}
-      <div className="px-3 sm:px-4 py-3 bg-[hsl(var(--color-surface-elevated))] border-t border-[hsl(var(--color-border))] flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="text-xs sm:text-sm text-[hsl(var(--color-foreground-secondary))]">
-          Showing 1 to {displayedSites} of {displayedSites} entries
-        </div>
-        <div className="flex items-center gap-2">
-          <button className="px-2 sm:px-3 py-1 text-xs sm:text-sm border border-[hsl(var(--color-border))] rounded hover:bg-[hsl(var(--color-card))] transition-colors text-[hsl(var(--color-foreground))]">
-            Previous
-          </button>
-          <button className="px-2 sm:px-3 py-1 text-xs sm:text-sm bg-blue-600 text-white rounded">
-            1
-          </button>
-          <button className="px-2 sm:px-3 py-1 text-xs sm:text-sm border border-[hsl(var(--color-border))] rounded hover:bg-[hsl(var(--color-card))] transition-colors text-[hsl(var(--color-foreground))]">
-            Next
-          </button>
-        </div>
-      </div>
-
-      {/* Scroll indicator for mobile */}
-      <div className="md:hidden px-3 py-2 bg-[hsl(var(--color-surface-elevated))] border-t border-[hsl(var(--color-border))] text-center">
-        <p className="text-xs text-[hsl(var(--color-foreground-muted))]">
-          Scroll horizontally to view all columns
-        </p>
-      </div>
+      <Pagination page={pagination?.page || 1} limit={pagination?.limit || 25} total={pagination?.total ?? sites.length} totalPages={pagination?.pages || pagination?.totalPages || 1} onPageChange={onPageChange} loading={loading} noun="sites" />
     </div>
   );
 }

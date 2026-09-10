@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Calendar, MapPin, Image as ImageIcon, Clock, ChevronLeft, ChevronRight, Filter, Loader2, AlertCircle } from 'lucide-react';
 import { clockApi, schedulerApi, shiftApi } from '../../lib/api';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/Table';
+import { formatDate as orgDate, formatTime as orgTime } from "../../lib/format";
 
 export default function TimeRecordsHistory() {
   const [loading, setLoading] = useState(true);
@@ -78,15 +79,9 @@ export default function TimeRecordsHistory() {
     setPagination({ ...pagination, page: 1 });
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-  };
+  const formatDate = (dateString) => orgDate(dateString, 'N/A');
 
-  const formatTime = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-  };
+  const formatTime = (dateString) => orgTime(dateString, 'N/A');
 
   const formatDuration = (hours) => {
     if (!hours) return 'N/A';
@@ -96,7 +91,7 @@ export default function TimeRecordsHistory() {
   };
 
   return (
-    <div className="min-h-screen bg-[hsl(var(--color-background))] py-6 px-4 sm:px-6 lg:px-8">
+    <div className="operational-page">
       <div className="max-w-7xl mx-auto">
 
         {/* Header */}
@@ -160,8 +155,8 @@ export default function TimeRecordsHistory() {
 
         {/* Error */}
         {error && (
-          <div className="border border-red-500/30 bg-red-500/10 rounded-lg p-4 mb-6 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+          <div className="border border-[hsl(var(--color-error))]/30 bg-[hsl(var(--color-error))]/10 rounded-lg p-4 mb-6 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-[hsl(var(--color-error))] mt-0.5 flex-shrink-0" />
             <p className="text-sm text-[hsl(var(--color-foreground))]">{error}</p>
           </div>
         )}
@@ -191,47 +186,47 @@ export default function TimeRecordsHistory() {
               <TableBody>
                 {records.map((record) => (
                   <TableRow key={record._id}>
-                    <TableCell>
+                    <TableCell data-label="Date" data-field="title">
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-[hsl(var(--color-foreground-secondary))]" />
                         <span className="font-medium text-[hsl(var(--color-foreground))]">{formatDate(record.clockInTime)}</span>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell data-label="Site" data-field="wide">
                       <div className="flex items-center gap-2">
                         <MapPin className="w-4 h-4 text-[hsl(var(--color-foreground-secondary))]" />
                         <span className="text-[hsl(var(--color-foreground))]">{record.siteId?.siteLocationName || 'N/A'}</span>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell data-label="Clock in">
                       <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-green-500" />
+                        <Clock className="w-4 h-4 text-[hsl(var(--color-success))]" />
                         <span className="text-[hsl(var(--color-foreground))]">{formatTime(record.clockInTime)}</span>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell data-label="Clock out">
                       {record.clockOutTime ? (
                         <div className="flex items-center gap-2">
-                          <Clock className="w-4 h-4 text-red-500" />
+                          <Clock className="w-4 h-4 text-[hsl(var(--color-error))]" />
                           <span className="text-[hsl(var(--color-foreground))]">{formatTime(record.clockOutTime)}</span>
                         </div>
                       ) : (
                         <span className="text-[hsl(var(--color-foreground-secondary))]">-</span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell data-label="Total hours">
                       <span className="font-semibold text-[hsl(var(--color-primary))]">{formatDuration(record.totalHours)}</span>
                     </TableCell>
-                    <TableCell>
+                    <TableCell data-label="Status" data-field="status">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                         record.status === 'CLOCKED_IN'
-                          ? 'bg-green-500/20 text-green-400'
+                          ? 'bg-[hsl(var(--color-success))]/20 text-[hsl(var(--color-success))]'
                           : 'bg-[hsl(var(--color-surface-elevated))] text-[hsl(var(--color-foreground-secondary))]'
                       }`}>
                         {record.status === 'CLOCKED_IN' ? 'Active' : 'Completed'}
                       </span>
                     </TableCell>
-                    <TableCell>
+                    <TableCell data-label="Photos" data-field="actions">
                       <div className="flex items-center gap-2">
                         {record.clockInPhotoUrl && (
                           <button
@@ -239,16 +234,16 @@ export default function TimeRecordsHistory() {
                             className="p-1 text-[hsl(var(--color-primary))] hover:text-[hsl(var(--color-primary-hover))] hover:bg-[hsl(var(--color-surface-elevated))] rounded"
                             title="View Clock In Photo"
                           >
-                            <ImageIcon className="w-4 h-4" />
+                            <ImageIcon className="w-4 h-4" /><span className="mobile-action-label">Clock in photo</span>
                           </button>
                         )}
                         {record.clockOutPhotoUrl && (
                           <button
                             onClick={() => setSelectedPhoto(record.clockOutPhotoUrl)}
-                            className="p-1 text-red-500 hover:text-red-400 hover:bg-[hsl(var(--color-surface-elevated))] rounded"
+                            className="p-1 text-[hsl(var(--color-error))] hover:text-[hsl(var(--color-error))] hover:bg-[hsl(var(--color-surface-elevated))] rounded"
                             title="View Clock Out Photo"
                           >
-                            <ImageIcon className="w-4 h-4" />
+                            <ImageIcon className="w-4 h-4" /><span className="mobile-action-label">Clock out photo</span>
                           </button>
                         )}
                         {!record.clockInPhotoUrl && !record.clockOutPhotoUrl && (
@@ -262,7 +257,7 @@ export default function TimeRecordsHistory() {
             </Table>
 
             {/* Pagination */}
-            <div className="border-t border-[hsl(var(--color-border))] px-6 py-4 flex items-center justify-between">
+            <div className="data-pagination">
               <div className="text-sm text-[hsl(var(--color-foreground-secondary))]">
                 Showing {records.length} of {pagination.total} records
               </div>

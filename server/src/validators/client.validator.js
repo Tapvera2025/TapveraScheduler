@@ -12,7 +12,7 @@ const createClientValidation = [
   body('state')
     .optional()
     .trim()
-    .isIn(['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT', '']).withMessage('Invalid state'),
+    .isLength({ max: 100 }).withMessage('State must not exceed 100 characters'),
 
   body('invoicingCompany')
     .optional()
@@ -49,7 +49,7 @@ const updateClientValidation = [
   body('state')
     .optional()
     .trim()
-    .isIn(['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT', '']).withMessage('Invalid state'),
+    .isLength({ max: 100 }).withMessage('State must not exceed 100 characters'),
 
   body('invoicingCompany')
     .optional()

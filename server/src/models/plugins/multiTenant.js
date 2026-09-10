@@ -6,8 +6,13 @@
  *
  * Adds:
  * - companyId field (required, indexed)
- * - findByCompany() static method
- * - Automatic filtering by companyId
+ * - findByCompany() / countByCompany() static helpers
+ * - compound indexes prefixed with companyId
+ *
+ * IMPORTANT: this plugin does NOT scope queries automatically. There is no
+ * query middleware here — a bare Model.find({}) returns every tenant's rows.
+ * Every read, write, aggregate and populate must pass companyId explicitly,
+ * taken from the authenticated actor and never from client input.
  */
 
 module.exports = function multiTenantPlugin(schema, options = {}) {

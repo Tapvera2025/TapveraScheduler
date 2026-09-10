@@ -1,59 +1,24 @@
-import { TrendingUp } from "lucide-react";
+import { Ban, CheckCircle2, ClipboardList, Clock3, XCircle } from "lucide-react";
+import { createElement } from "react";
 
 export default function LeaveStats({ stats }) {
   const statCards = [
-    {
-      title: "Total Leave Requests",
-      value: stats?.total || 0,
-      color: "bg-[hsl(var(--color-surface-elevated))]",
-      textColor: "text-[hsl(var(--color-foreground))]",
-    },
-    {
-      title: "Awaiting",
-      value: stats?.awaiting || 0,
-      color: "bg-[hsl(var(--color-surface-elevated))]",
-      textColor: "text-[hsl(var(--color-foreground))]",
-    },
-    {
-      title: "Approved",
-      value: stats?.approved || 0,
-      color: "bg-[hsl(var(--color-surface-elevated))]",
-      textColor: "text-[hsl(var(--color-foreground))]",
-    },
-    {
-      title: "Declined",
-      value: stats?.declined || 0,
-      color: "bg-[hsl(var(--color-surface-elevated))]",
-      textColor: "text-[hsl(var(--color-foreground))]",
-    },
-    {
-      title: "Cancelled",
-      value: stats?.cancelled || 0,
-      color: "bg-[hsl(var(--color-surface-elevated))]",
-      textColor: "text-[hsl(var(--color-foreground))]",
-    },
+    { label: "All requests", value: stats?.total || 0, detail: "Across your team", icon: ClipboardList, tone: "primary" },
+    { label: "Awaiting", value: stats?.awaiting ?? stats?.pending ?? 0, detail: "Need a decision", icon: Clock3, tone: "warning" },
+    { label: "Approved", value: stats?.approved || 0, detail: "Confirmed time away", icon: CheckCircle2, tone: "success" },
+    { label: "Declined", value: stats?.declined || 0, detail: "Not approved", icon: XCircle, tone: "error" },
+    { label: "Cancelled", value: stats?.cancelled || 0, detail: "No longer active", icon: Ban, tone: "neutral" },
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
-      {statCards.map((stat, index) => (
-        <div
-          key={index}
-          className={`${stat.color} border border-[hsl(var(--color-border))] rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow`}
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-[hsl(var(--color-foreground-secondary))] mb-1">{stat.title}</p>
-              <p className={`text-3xl font-bold ${stat.textColor}`}>
-                {stat.value}
-              </p>
-            </div>
-            {index === 0 && (
-              <TrendingUp className="w-5 h-5 text-[hsl(var(--color-primary))]" />
-            )}
-          </div>
-        </div>
+    <section className="leave-summary-grid" aria-label="Leave request summary">
+      {statCards.map(({ label, value, detail, icon: Icon, tone }) => (
+        <article className={`stat-card leave-stat-${tone}`} key={label}>
+          <div className="stat-card-top"><span>{label}</span>{createElement(Icon, { size: 18, strokeWidth: 1.5 })}</div>
+          <div className="stat-value">{String(value).padStart(2, "0")}</div>
+          <div className="stat-card-bottom"><span>{detail}</span></div>
+        </article>
       ))}
-    </div>
+    </section>
   );
 }

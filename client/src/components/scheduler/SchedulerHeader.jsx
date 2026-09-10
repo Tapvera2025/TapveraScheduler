@@ -18,7 +18,7 @@ export default function SchedulerHeader() {
         <div className="flex items-center gap-2 flex-wrap">
           {/* Site Selector */}
           <div className="relative min-w-[200px]">
-            <select className="w-full px-3 py-2 border border-[hsl(var(--color-border))] rounded-md text-sm text-[hsl(var(--color-foreground-secondary))] bg-[hsl(var(--color-card))] cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <select className="w-full px-3 py-2 border border-[hsl(var(--color-border))] rounded-md text-sm text-[hsl(var(--color-foreground-secondary))] bg-[hsl(var(--color-card))] cursor-pointer focus:outline-none focus:ring-2 focus:ring-[hsl(var(--color-ring))]">
               <option>Select Site...</option>
               <option>Elimbah Stabling Yard</option>
               <option>Woombay Stabling Yard</option>
@@ -32,7 +32,7 @@ export default function SchedulerHeader() {
               className="p-2 border border-[hsl(var(--color-border))] rounded hover:bg-[hsl(var(--color-surface-elevated))] transition-colors"
               title="User View"
             >
-              <User className="w-4 h-4 text-blue-600" />
+              <User className="w-4 h-4 text-[hsl(var(--color-primary))]" />
             </button>
             <button
               className="p-2 border border-[hsl(var(--color-border))] rounded hover:bg-[hsl(var(--color-surface-elevated))] transition-colors"
@@ -91,7 +91,7 @@ export default function SchedulerHeader() {
             Options
             <ChevronDown className="w-4 h-4" />
           </button>
-          <button className="px-4 py-2 bg-green-500 text-white rounded text-sm font-medium hover:bg-green-600 transition-colors whitespace-nowrap">
+          <button className="px-4 py-2 bg-[hsl(var(--color-success))] text-[hsl(var(--color-success-foreground))] rounded text-sm font-medium hover:bg-[hsl(var(--color-success))] transition-colors whitespace-nowrap">
             No Shifts Published
           </button>
         </div>

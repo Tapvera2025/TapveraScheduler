@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { clearSession } from './session';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
@@ -27,13 +28,23 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       // Clear all authentication data
-      localStorage.removeItem('token');
-      localStorage.removeItem('isAuthenticated');
-      localStorage.removeItem('userRole');
-      localStorage.removeItem('userName');
-      localStorage.removeItem('userEmail');
+      clearSession();
       window.location.href = '/login';
     }
+
+    // Replace the generic "Validation failed" message with the actual
+    // per-field reasons so any caller that reads err.response.data.message
+    // (toasts, inline banners, etc.) shows something useful.
+    const data = error.response?.data;
+    if (data && data.errors && typeof data.errors === 'object') {
+      const parts = Object.values(data.errors)
+        .filter((msg) => msg != null)
+        .map((msg) => String(msg));
+      if (parts.length > 0) {
+        data.message = parts.join(' • ');
+      }
+    }
+
     return Promise.reject(error);
   }
 );
@@ -71,6 +82,7 @@ export const shiftApi = {
   delete: (id) => api.delete(`/scheduler/shifts/${id}`),
   getMyShifts: (startDate, endDate) => api.get('/shifts/my-shifts', { params: { startDate, endDate } }),
   getMyEmployee: () => api.get('/shifts/my-employee'),
+  getAccessCodes: (shiftId) => api.get(`/shifts/${shiftId}/access-codes`),
   getDeleted: (siteId) => api.get('/scheduler/shifts/deleted', { params: { siteId } }),
   restore: (id) => api.put(`/scheduler/shifts/${id}/restore`),
   permanentDelete: (id) => api.delete(`/scheduler/shifts/${id}/permanent`)
@@ -177,6 +189,70 @@ export const leaveApi = {
 export const dashboardApi = {
   getStats: () => api.get('/dashboard/stats'),
   getAttendance: () => api.get('/dashboard/attendance'),
+  getCoverage: (period = 'week') => api.get('/dashboard/coverage', { params: { period } }),
+};
+
+// Organisation settings (the caller's own organisation)
+export const companyApi = {
+  getMine: () => api.get('/companies/me'),
+  updateMine: (data) => api.put('/companies/me', data),
+  getStats: (id) => api.get(`/companies/${id}/stats`),
+};
+
+// Adhoc shift request API endpoints
+export const adhocApi = {
+  // Employee self-service
+  getMy: (params) => api.get('/scheduler/adhoc/my', { params }),
+  request: (data) => api.post('/scheduler/adhoc/my', data),
+  withdraw: (id) => api.put(`/scheduler/adhoc/my/${id}/withdraw`),
+  // Reviewer
+  list: (params) => api.get('/scheduler/adhoc/requests', { params }),
+  getStats: () => api.get('/scheduler/adhoc/stats'),
+  approve: (id, note = '') => api.put(`/scheduler/adhoc/requests/${id}/approve`, { note }),
+  reject: (id, note = '') => api.put(`/scheduler/adhoc/requests/${id}/reject`, { note }),
+};
+
+// Master (platform administration) API endpoints
+export const masterApi = {
+  getStats: () => api.get('/master/stats'),
+  getModules: () => api.get('/master/modules'),
+  listOrganisations: (params) => api.get('/master/organisations', { params }),
+  getOrganisation: (id) => api.get(`/master/organisations/${id}`),
+  createOrganisation: (data) => api.post('/master/organisations', data),
+  updateOrganisation: (id, data) => api.put(`/master/organisations/${id}`, data),
+  setModules: (id, modules) => api.put(`/master/organisations/${id}/modules`, { modules }),
+  setStatus: (id, data) => api.put(`/master/organisations/${id}/status`, data),
+  createAdmin: (id, data) => api.post(`/master/organisations/${id}/admins`, data),
+  resendCredentials: (id, userId) =>
+    api.post(`/master/organisations/${id}/admins/${userId}/resend`),
+};
+
+// Agent API endpoints
+//
+// The server owns the tool catalogue, so the client asks what it may run rather
+// than hard-coding a list. Writes are always two calls: a draft, then a commit
+// that echoes the integrity hash from the preview.
+export const agentApi = {
+  getTools: () => api.get('/agent/tools'),
+  // Single round-trip: plan + execute/prepare in one call.
+  // Returns { kind: 'reply'|'read'|'write', ... }
+  chat: (message, history = []) => api.post('/agent/chat', { message, history }),
+  // Transcribe audio via Groq Whisper. Returns { text, pipeline }.
+  transcribe: (audioBlob) => {
+    const form = new FormData();
+    form.append('audio', audioBlob, 'audio.webm');
+    return api.post('/agent/transcribe', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  // Neural TTS via Groq Orpheus. Returns raw audio ArrayBuffer.
+  tts: (text) =>
+    api.post('/agent/tts', { text }, { responseType: 'arraybuffer' }),
+  execute: (tool, input = {}, channel = 'text') =>
+    api.post('/agent/execute', { tool, input, channel }),
+  prepare: (tool, input = {}, channel = 'text') =>
+    api.post('/agent/drafts', { tool, input, channel }),
+  commit: (draftId, integrityHash, channel = 'text') =>
+    api.post(`/agent/drafts/${draftId}/commit`, { integrityHash, channel }),
+  cancel: (draftId) => api.post(`/agent/drafts/${draftId}/cancel`),
 };
 
 // Geocoding API endpoints

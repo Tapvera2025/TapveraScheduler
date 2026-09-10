@@ -1,12 +1,12 @@
+import PageHeader from "../components/layout/PageHeader";
 import { useState, useRef, useEffect } from "react";
 import {
-  Building2,
   Plus,
   ChevronDown,
-  Settings,
   Maximize,
   Minimize,
   RotateCw,
+  Building2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import ClientsTable from "../components/clients/ClientsTable";
@@ -14,7 +14,6 @@ import ClientFilters from "../components/clients/ClientFilters";
 import AddClientModal from "../components/clients/AddClientModal";
 import AddMultipleClientsModal from "../components/clients/AddMultipleClientsModal";
 import { clientApi } from "../lib/api";
-import staticClients from "../data/clients";
 import { useFullscreen } from "../hooks/useFullscreen";
 
 export default function Clients() {
@@ -30,13 +29,15 @@ export default function Clients() {
 
   // Filter state
   const [showInactive, setShowInactive] = useState(false);
+  const [search, setSearch] = useState("");
 
   // API state
-  const [clients, setClients] = useState(staticClients); // Start with static data
+  const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [currentLimit, setCurrentLimit] = useState(25);
+  const [pagination, setPagination] = useState({ total: 0, pages: 1 });
 
   // Fetch clients function
   const fetchClients = async () => {
@@ -47,26 +48,15 @@ export default function Clients() {
         page: currentPage,
         limit: currentLimit,
         status: showInactive ? undefined : "ACTIVE",
+        search,
       });
 
-      // Try different response structures
-      const clientsData =
-        response.data.data?.clients || response.data.data || response.data;
-
-      // Only update if we got valid data
-      if (Array.isArray(clientsData) && clientsData.length > 0) {
-        setClients(clientsData);
-      } else {
-        // Keep existing data if API returns empty
-        console.warn("API returned empty data, keeping current clients");
-      }
+      const payload = response.data.data;
+      setClients(Array.isArray(payload) ? payload : payload?.clients || []);
+      setPagination(payload?.pagination || { total: Array.isArray(payload) ? payload.length : 0, pages: 1 });
     } catch (err) {
-      console.error("Failed to fetch clients:", err);
       setError(err.response?.data?.message || "Failed to fetch clients");
-      // Keep static data on error - don't show error toast if we have data
-      if (clients.length === 0) {
-        toast.error("Using local data - API not available");
-      }
+      setClients([]);
     } finally {
       setLoading(false);
     }
@@ -75,7 +65,7 @@ export default function Clients() {
   // Re-fetch whenever filter or page changes
   useEffect(() => {
     fetchClients();
-  }, [showInactive, currentPage, currentLimit]);
+  }, [showInactive, currentPage, currentLimit, search]);
 
   // Handle refresh button
   const handleRefresh = () => {
@@ -112,70 +102,36 @@ export default function Clients() {
   }, []);
 
   return (
-    <div ref={pageRef} className="min-h-screen bg-[hsl(var(--color-surface-elevated))]">
-      {/* Clients Submenu Bar */}
-      <div className="bg-blue-600 text-white px-4 sm:px-6 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Building2 className="w-5 h-5" />
-            <h1 className="text-base sm:text-lg font-semibold">Clients</h1>
-          </div>
-          <div className="flex items-center gap-1 sm:gap-2">
-            <button
-              className="p-1.5 sm:p-2 hover:bg-blue-700 rounded transition-colors"
-              title="Settings"
-            >
-              <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-            {isSupported && (
-              <button
-                onClick={toggleFullscreen}
-                className="p-1.5 sm:p-2 hover:bg-blue-700 rounded transition-colors"
-                title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-              >
-                {isFullscreen ? (
-                  <Minimize className="w-4 h-4 sm:w-5 sm:h-5" />
-                ) : (
-                  <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />
-                )}
-              </button>
-            )}
-            <button
-              onClick={handleRefresh}
-              className="p-1.5 sm:p-2 hover:bg-blue-700 rounded transition-colors"
-              title="Refresh"
-            >
-              <RotateCw className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-          </div>
-        </div>
-      </div>
+    <div ref={pageRef} className="data-page">
+      <PageHeader icon={Building2} title="Clients" eyebrow="YOUR WORKSPACE" description="Every client, with the details your team needs." actions={<>
+        <button className="icon-button" onClick={handleRefresh} aria-label="Refresh clients"><RotateCw size={17} /></button>
+        {isSupported && <button className="icon-button" onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>{isFullscreen ? <Minimize size={17} /> : <Maximize size={17} />}</button>}
+      </>} />
 
       {/* Content Section */}
-      <div className="p-3 sm:p-6">
+      <div className="data-page-body">
         {/* Filter Section */}
-        <div className="mb-4 sm:mb-6">
-          <ClientFilters showInactive={showInactive} setShowInactive={setShowInactive} />
+        <div className="data-toolbar mb-4">
+          <ClientFilters showInactive={showInactive} setShowInactive={value => { setCurrentPage(1); setShowInactive(value); }} search={search} onSearchChange={value => { setCurrentPage(1); setSearch(value); }} />
         </div>
 
         {/* Action Bar */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4 sm:mb-6">
+        <div className="data-actionbar">
           {/* Primary Actions */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative" ref={addMenuRef}>
               <button
                 onClick={() => setAddMenuOpen(!addMenuOpen)}
-                className="px-3 sm:px-4 py-2 bg-pink-500 text-white rounded-md hover:bg-pink-600 transition-colors flex items-center gap-2 text-sm font-medium"
+                className="px-3 sm:px-4 py-2 bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] rounded-md hover:bg-[hsl(var(--color-primary))] transition-colors flex items-center gap-2 text-sm font-medium"
               >
                 <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">Add New</span>
-                <span className="sm:hidden">Add</span>
+                <span>Add client</span>
                 <ChevronDown className="w-4 h-4" />
               </button>
 
               {/* Add New Dropdown */}
               {addMenuOpen && (
-                <div className="absolute left-0 top-full mt-1 w-48 bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] rounded-md shadow-lg z-50">
+                <div className="data-menu absolute left-0 top-full mt-1 w-48 z-50">
                   <button
                     onClick={() => {
                       setShowAddClientModal(true);
@@ -199,27 +155,15 @@ export default function Clients() {
             </div>
           </div>
 
-          {/* Secondary Actions */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button className="px-3 sm:px-4 py-2 bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] text-[hsl(var(--color-foreground))] rounded-md hover:bg-[hsl(var(--color-surface-elevated))] transition-colors flex items-center gap-2 text-sm">
-              Actions
-              <ChevronDown className="w-4 h-4" />
-            </button>
-            <button className="px-3 sm:px-4 py-2 bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] text-[hsl(var(--color-foreground))] rounded-md hover:bg-[hsl(var(--color-surface-elevated))] transition-colors flex items-center gap-2 text-sm">
-              Columns
-              <ChevronDown className="w-4 h-4" />
-            </button>
-            <select className="px-3 sm:px-4 py-2 bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] text-[hsl(var(--color-foreground))] rounded-md text-sm cursor-pointer">
-              <option>25</option>
-              <option>50</option>
-              <option>100</option>
-            </select>
-          </div>
+          <label className="directory-page-size"><span>Per page</span><select aria-label="Records per page" value={currentLimit} onChange={(e) => { setCurrentPage(1); setCurrentLimit(Number(e.target.value)); }}>{[25,50,100].map(n => <option key={n} value={n}>{n}</option>)}</select></label>
         </div>
 
+        {error && <div role="alert" className="stats-error">{error}<button onClick={handleRefresh}>Try again</button></div>}
         {/* Table */}
         <ClientsTable
           clients={clients}
+          pagination={{ ...pagination, page: currentPage, limit: currentLimit }}
+          onPageChange={setCurrentPage}
           loading={loading}
           onClientClick={handleClientClick}
         />
@@ -230,11 +174,7 @@ export default function Clients() {
         <AddClientModal
           client={selectedClient}
           onClose={handleCloseModal}
-          onSuccess={() => {
-            // Modal already shows success message and closes
-            // Optionally fetch clients to refresh data (only if backend is ready)
-            // fetchClients();
-          }}
+          onSuccess={fetchClients}
         />
       )}
 
@@ -242,11 +182,7 @@ export default function Clients() {
       {showMultipleClientsModal && (
         <AddMultipleClientsModal
           onClose={handleCloseModal}
-          onSuccess={() => {
-            // Modal already shows success message and closes
-            // Optionally fetch clients to refresh data (only if backend is ready)
-            // fetchClients();
-          }}
+          onSuccess={fetchClients}
         />
       )}
     </div>

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { MapPin, Loader2, X } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { geocodingApi } from "../../lib/api";
-import { AUSTRALIAN_STATES } from "../../constants/locations";
+import { STATE_GROUPS } from "../../constants/locations";
 
 export function LocationAutocomplete({
   value,
@@ -10,7 +10,9 @@ export function LocationAutocomplete({
   onSelect,
   placeholder = "Enter a location",
   className,
-  countryCode = "au", // Default to Australia
+  // Empty string / undefined = no country filter (worldwide search).
+  // Callers may pass "au", "in", etc. to restrict.
+  countryCode = "",
   disabled = false,
   ...props
 }) {
@@ -95,24 +97,19 @@ export function LocationAutocomplete({
     setIsOpen(false);
     setSuggestions([]);
 
-    // Helper function to map full state name to abbreviation
+    // Match a state name or code across AU + IN preset lists. Anything
+    // that doesn't match a preset is returned verbatim so downstream fields
+    // (which now use <StateInput>) show it in custom mode.
     const mapStateToCode = (stateName) => {
       if (!stateName) return "";
-
-      // Find matching state by full name (case-insensitive)
-      const state = AUSTRALIAN_STATES.find(
-        (s) => s.name.toLowerCase() === stateName.toLowerCase()
-      );
-
-      // Return code if found, otherwise check if it's already a code
-      if (state) return state.code;
-
-      // Check if the input is already a valid state code
-      const stateByCode = AUSTRALIAN_STATES.find(
-        (s) => s.code.toLowerCase() === stateName.toLowerCase()
-      );
-
-      return stateByCode ? stateByCode.code : stateName;
+      const needle = String(stateName).toLowerCase();
+      for (const group of STATE_GROUPS) {
+        const byName = group.options.find((s) => s.name.toLowerCase() === needle);
+        if (byName) return byName.code;
+        const byCode = group.options.find((s) => s.code.toLowerCase() === needle);
+        if (byCode) return byCode.code;
+      }
+      return stateName;
     };
 
     // Extract address components

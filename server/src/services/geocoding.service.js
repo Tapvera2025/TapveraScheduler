@@ -1,31 +1,42 @@
 /**
  * Geocoding Service
  *
- * Proxy service for geocoding/location search using Google Maps Geocoding API
- * Provides caching and proper error handling
+ * Proxy service for geocoding / location autocomplete using Nominatim
+ * (OpenStreetMap). No API key, no billing. Response shape matches what the
+ * client consumed from the previous Google-backed implementation, so the
+ * frontend (LocationAutocomplete, AddSiteModal, AddEmployeeModal) needs
+ * zero changes.
+ *
+ * Usage policy notes (https://operations.osmfoundation.org/policies/nominatim/):
+ *   - Max 1 request per second per IP. Cache is already 24h so this is fine
+ *     under normal use.
+ *   - A descriptive User-Agent identifying the application is required.
+ *   - For heavier production traffic, self-host Nominatim or move to a hosted
+ *     drop-in like LocationIQ. The class boundary here makes that swap trivial.
  */
 
 const axios = require('axios');
 const NodeCache = require('node-cache');
+const config = require('../config');
+const logger = require('../utils/logger');
 
 // Cache geocoding results for 24 hours
 const geocodeCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
 
+const USER_AGENT =
+  `${config.app?.name || 'Tapvera-Scheduler'}/1.0 ` +
+  `(${config.email?.from || 'contact@tapvera.io'})`;
+
 class GeocodingService {
   constructor() {
-    this.geocodeURL = 'https://maps.googleapis.com/maps/api/geocode/json';
-    this.autocompleteURL = 'https://maps.googleapis.com/maps/api/place/autocomplete/json';
-    this.placeDetailsURL = 'https://maps.googleapis.com/maps/api/place/details/json';
-    this.apiKey = process.env.GOOGLE_MAPS_API_KEY;
-
-    if (!this.apiKey) {
-      console.warn('WARNING: GOOGLE_MAPS_API_KEY not set in environment variables');
-    }
+    this.searchURL = 'https://nominatim.openstreetmap.org/search';
+    this.reverseURL = 'https://nominatim.openstreetmap.org/reverse';
   }
 
   /**
-   * Helper function to map full state name to abbreviation for Australian states
-   * @private
+   * Nominatim state names come through as full names ("New South Wales").
+   * Australian users expect codes ("NSW"). Anywhere else we leave the string
+   * as returned.
    */
   mapStateToCode(stateName) {
     if (!stateName) return '';
@@ -41,261 +52,194 @@ class GeocodingService {
       'Australian Capital Territory': 'ACT',
     };
 
-    // Check if it's already a code
-    if (Object.values(stateMap).includes(stateName.toUpperCase())) {
-      return stateName.toUpperCase();
+    if (Object.values(stateMap).includes(String(stateName).toUpperCase())) {
+      return String(stateName).toUpperCase();
     }
 
-    // Try to find by full name
     return stateMap[stateName] || stateName;
   }
 
   /**
-   * Parse Google Maps address components into structured format
-   * @private
+   * Nominatim's address object exposes a lot of alternative fields
+   * (city vs town vs village, road vs pedestrian, etc.). Normalise those
+   * to the flat shape the client already consumes.
    */
-  parseAddressComponents(addressComponents) {
-    let street = '';
-    let suburb = '';
-    let state = '';
-    let postcode = '';
-    let country = '';
+  normalizeAddress(raw = {}) {
+    const streetParts = [];
+    if (raw.house_number) streetParts.push(raw.house_number);
+    const roadName =
+      raw.road ||
+      raw.pedestrian ||
+      raw.footway ||
+      raw.cycleway ||
+      raw.path ||
+      '';
+    if (roadName) streetParts.push(roadName);
+    const street = streetParts.join(' ').trim();
 
-    addressComponents.forEach((component) => {
-      const types = component.types;
-
-      if (types.includes('street_number')) {
-        street = component.long_name + ' ';
-      }
-      if (types.includes('route')) {
-        street += component.long_name;
-      }
-      if (types.includes('locality') || types.includes('postal_town')) {
-        suburb = component.long_name;
-      }
-      if (types.includes('administrative_area_level_1')) {
-        state = this.mapStateToCode(component.long_name);
-      }
-      if (types.includes('postal_code')) {
-        postcode = component.long_name;
-      }
-      if (types.includes('country')) {
-        country = component.short_name;
-      }
-    });
+    const suburb =
+      raw.suburb ||
+      raw.neighbourhood ||
+      raw.hamlet ||
+      raw.village ||
+      raw.town ||
+      raw.city ||
+      raw.municipality ||
+      '';
 
     return {
-      road: street.trim(),
-      street: street.trim(),
-      suburb: suburb,
+      road: street,
+      street,
+      suburb,
       town: suburb,
       city: suburb,
-      state: state,
-      postcode: postcode,
-      country: country,
+      state: this.mapStateToCode(raw.state || raw.region || ''),
+      postcode: raw.postcode || '',
+      country: raw.country_code ? String(raw.country_code).toUpperCase() : (raw.country || ''),
     };
   }
 
   /**
-   * Search for locations using Places Autocomplete API
-   * @param {Object} params - Search parameters
-   * @param {String} params.query - Search query
-   * @param {String} params.countryCode - Optional country code filter (e.g., 'au')
-   * @param {Number} params.limit - Maximum number of results (default: 5)
-   * @returns {Promise<Array>} - Array of location results
+   * Search for places by free-text query.
+   *
+   * @param {Object} opts
+   * @param {String} opts.query        Free text (address / place name).
+   * @param {String} [opts.countryCode] ISO 3166-1 alpha-2, e.g. "au".
+   *                                    Nominatim expects lowercase.
+   * @param {Number} [opts.limit=5]    Max predictions to return. Capped at 10.
+   * @returns {Promise<Array>}
    */
   async search({ query, countryCode, limit = 5 }) {
-    if (!this.apiKey) {
-      throw new Error('Google Maps API key not configured');
-    }
-
-    if (!query || query.trim().length < 1) {
+    if (!query || String(query).trim().length < 1) {
       return [];
     }
 
-    // Create cache key
-    const cacheKey = `search:${query}:${countryCode || 'all'}:${limit}`;
+    const trimmedQuery = String(query).trim();
+    const resultLimit = Math.min(parseInt(limit, 10) || 5, 10);
+    const cacheKey = `search:${trimmedQuery}:${countryCode || 'all'}:${resultLimit}`;
     const cached = geocodeCache.get(cacheKey);
-
-    if (cached) {
-      return cached;
-    }
+    if (cached) return cached;
 
     try {
-      // Step 1: Get autocomplete predictions
-      const autocompleteParams = {
-        input: query,
-        key: this.apiKey,
-        types: 'geocode', // Focus on addresses
+      const params = {
+        q: trimmedQuery,
+        format: 'json',
+        addressdetails: 1,
+        limit: resultLimit,
       };
-
       if (countryCode) {
-        autocompleteParams.components = `country:${countryCode.toLowerCase()}`;
+        params.countrycodes = String(countryCode).toLowerCase();
       }
 
-      const autocompleteResponse = await axios.get(this.autocompleteURL, {
-        params: autocompleteParams,
+      const response = await axios.get(this.searchURL, {
+        params,
         timeout: 10000,
+        headers: {
+          'User-Agent': USER_AGENT,
+          'Accept-Language': 'en',
+        },
       });
 
-      if (autocompleteResponse.data.status !== 'OK') {
-        if (autocompleteResponse.data.status === 'ZERO_RESULTS') {
-          return [];
-        }
-        throw new Error(`Google Places API error: ${autocompleteResponse.data.status}`);
-      }
+      const rows = Array.isArray(response.data) ? response.data : [];
 
-      const predictions = autocompleteResponse.data.predictions.slice(0, limit);
+      const results = rows.map((row) => ({
+        display_name: row.display_name,
+        address: this.normalizeAddress(row.address || {}),
+        lat: String(row.lat),
+        lon: String(row.lon),
+        place_id: String(row.place_id ?? row.osm_id ?? ''),
+        type: row.type || 'place',
+        importance: typeof row.importance === 'number' ? row.importance : 0,
+      }));
 
-      // Step 2: Get details for each prediction to get coordinates
-      const detailsPromises = predictions.map(async (prediction) => {
-        try {
-          const detailsResponse = await axios.get(this.placeDetailsURL, {
-            params: {
-              place_id: prediction.place_id,
-              fields: 'formatted_address,geometry,address_components',
-              key: this.apiKey,
-            },
-            timeout: 10000,
-          });
-
-          if (detailsResponse.data.status === 'OK') {
-            const place = detailsResponse.data.result;
-            const address = this.parseAddressComponents(place.address_components);
-
-            return {
-              display_name: place.formatted_address,
-              address: address,
-              lat: place.geometry.location.lat.toString(),
-              lon: place.geometry.location.lng.toString(),
-              place_id: prediction.place_id,
-              type: 'autocomplete',
-              importance: 1,
-            };
-          }
-          return null;
-        } catch (err) {
-          console.error(`Failed to get details for place_id ${prediction.place_id}:`, err.message);
-          return null;
-        }
-      });
-
-      const results = (await Promise.all(detailsPromises)).filter(Boolean);
-
-      // Cache the results
       geocodeCache.set(cacheKey, results);
-
       return results;
     } catch (error) {
-      console.error('Autocomplete search error:', error.message);
+      logger.error('Nominatim search failed', {
+        query: trimmedQuery,
+        status: error.response?.status,
+        message: error.message,
+      });
 
       if (error.response?.status === 429) {
         throw new Error('Rate limit exceeded. Please try again in a moment.');
       }
-
-      if (error.message.includes('API key')) {
-        throw new Error('Google Maps API configuration error');
-      }
-
       throw new Error('Failed to fetch location suggestions. Please try again.');
     }
   }
 
   /**
-   * Reverse geocode coordinates to address
-   * @param {Object} params - Geocode parameters
-   * @param {Number} params.lat - Latitude
-   * @param {Number} params.lon - Longitude
-   * @returns {Promise<Object>} - Location details
+   * Reverse geocode a coordinate pair to a structured address.
+   *
+   * @param {Object} opts
+   * @param {Number} opts.lat
+   * @param {Number} opts.lon
+   * @returns {Promise<Object>}
    */
   async reverse({ lat, lon }) {
-    if (!this.apiKey) {
-      throw new Error('Google Maps API key not configured');
+    if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) {
+      throw new Error('Latitude and longitude must be valid numbers');
     }
 
-    if (!lat || !lon) {
-      throw new Error('Latitude and longitude are required');
-    }
-
-    // Validate coordinates
-    const latitude = parseFloat(lat);
-    const longitude = parseFloat(lon);
-
-    if (
-      isNaN(latitude) ||
-      isNaN(longitude) ||
-      latitude < -90 ||
-      latitude > 90 ||
-      longitude < -180 ||
-      longitude > 180
-    ) {
-      throw new Error('Invalid coordinates');
-    }
-
-    // Create cache key
-    const cacheKey = `reverse:${latitude}:${longitude}`;
+    const cacheKey = `reverse:${Number(lat).toFixed(5)}:${Number(lon).toFixed(5)}`;
     const cached = geocodeCache.get(cacheKey);
-
-    if (cached) {
-      return cached;
-    }
+    if (cached) return cached;
 
     try {
-      const response = await axios.get(this.geocodeURL, {
+      const response = await axios.get(this.reverseURL, {
         params: {
-          latlng: `${latitude},${longitude}`,
-          key: this.apiKey,
+          lat,
+          lon,
+          format: 'json',
+          addressdetails: 1,
         },
         timeout: 10000,
+        headers: {
+          'User-Agent': USER_AGENT,
+          'Accept-Language': 'en',
+        },
       });
 
-      if (response.data.status !== 'OK') {
-        if (response.data.status === 'ZERO_RESULTS') {
-          throw new Error('No address found for these coordinates');
-        }
-        throw new Error(`Google Maps API error: ${response.data.status}`);
+      const row = response.data || {};
+      if (row.error) {
+        // Nominatim returns {error:"Unable to geocode"} on misses (still 200)
+        throw new Error(row.error);
       }
 
-      const item = response.data.results[0];
-      const address = this.parseAddressComponents(item.address_components);
-
       const result = {
-        display_name: item.formatted_address,
-        address: address,
-        lat: item.geometry.location.lat.toString(),
-        lon: item.geometry.location.lng.toString(),
-        place_id: item.place_id,
+        display_name: row.display_name || '',
+        address: this.normalizeAddress(row.address || {}),
+        lat: String(row.lat ?? lat),
+        lon: String(row.lon ?? lon),
+        place_id: String(row.place_id ?? row.osm_id ?? ''),
       };
 
-      // Cache the result
       geocodeCache.set(cacheKey, result);
-
       return result;
     } catch (error) {
-      console.error('Reverse geocoding error:', error.message);
+      logger.error('Nominatim reverse geocode failed', {
+        lat,
+        lon,
+        status: error.response?.status,
+        message: error.message,
+      });
 
       if (error.response?.status === 429) {
         throw new Error('Rate limit exceeded. Please try again in a moment.');
       }
-
-      if (error.message.includes('API key')) {
-        throw new Error('Google Maps API configuration error');
-      }
-
       throw new Error('Failed to reverse geocode coordinates. Please try again.');
     }
   }
 
   /**
-   * Clear the geocoding cache
+   * Clear all cached geocoding results.
    */
   clearCache() {
     geocodeCache.flushAll();
   }
 
   /**
-   * Get cache statistics
-   * @returns {Object} - Cache stats
+   * Cache stats for the /geocoding/cache/stats route.
    */
   getCacheStats() {
     return geocodeCache.getStats();

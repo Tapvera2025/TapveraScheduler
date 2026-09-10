@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Search, Plus, RotateCcw, SlidersHorizontal } from "lucide-react";
-import LeaveFilters from "../components/leave/LeaveFilters";
+import { CalendarDays, Plus, RotateCcw, Search, X } from "lucide-react";
 import LeaveStats from "../components/leave/LeaveStats";
 import LeaveTable from "../components/leave/LeaveTable";
 import AddLeaveModal from "../components/leave/AddLeaveModal";
@@ -8,21 +7,48 @@ import { Input } from "../components/ui/Input";
 import { Button } from "../components/ui/Button";
 import { Select } from "../components/ui/Select";
 import { leaveApi } from "../lib/api";
+import { formatDate } from "../lib/format";
 import toast from "react-hot-toast";
 
-export default function LeaveManagement() {
-  const [filters, setFilters] = useState({
-    leavePeriod: "all",
-    leaveCategory: "all",
-    employee: "all",
-  });
+const STATUS_OPTIONS = [
+  ["all", "All"],
+  ["pending", "Pending"],
+  ["approved", "Approved"],
+  ["declined", "Declined"],
+  ["cancelled", "Cancelled"],
+];
 
+const initialFilters = { leavePeriod: "all", leaveCategory: "all", status: "all" };
+
+function getPeriodRange(period) {
+  const now = new Date();
+  const endOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+  const endOfCurrentMonth = endOfDay(new Date(currentYear, currentMonth + 1, 0));
+
+  switch (period) {
+    case "current_prev_month":
+      return { startDate: new Date(currentYear, currentMonth - 1, 1), endDate: endOfCurrentMonth };
+    case "current_month":
+      return { startDate: new Date(currentYear, currentMonth, 1), endDate: endOfCurrentMonth };
+    case "last_3_months":
+      return { startDate: new Date(currentYear, currentMonth - 2, 1), endDate: endOfCurrentMonth };
+    case "last_6_months":
+      return { startDate: new Date(currentYear, currentMonth - 5, 1), endDate: endOfCurrentMonth };
+    case "this_year":
+      return { startDate: new Date(currentYear, 0, 1), endDate: endOfDay(new Date(currentYear, 11, 31)) };
+    default:
+      return null;
+  }
+}
+
+export default function LeaveManagement() {
+  const [filters, setFilters] = useState(initialFilters);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showFilters, setShowFilters] = useState(true);
   const [itemsPerPage, setItemsPerPage] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
-
   const [leaves, setLeaves] = useState([]);
   const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, declined: 0, cancelled: 0 });
   const [loading, setLoading] = useState(false);
@@ -31,22 +57,22 @@ export default function LeaveManagement() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const params = {
-        page: currentPage,
-        limit: itemsPerPage,
-      };
-      if (filters.leaveCategory !== "all") params.leaveType = filters.leaveCategory;
-      if (filters.employee !== "all") params.status = filters.employee;
+      const params = { page: currentPage, limit: itemsPerPage };
+      const period = getPeriodRange(filters.leavePeriod);
 
-      const [leavesRes, statsRes] = await Promise.all([
-        leaveApi.getAll(params),
-        leaveApi.getStats(),
-      ]);
+      if (filters.leaveCategory !== "all") params.leaveType = filters.leaveCategory;
+      if (filters.status !== "all") params.status = filters.status;
+      if (period) {
+        params.startDate = period.startDate.toISOString();
+        params.endDate = period.endDate.toISOString();
+      }
+
+      const [leavesRes, statsRes] = await Promise.all([leaveApi.getAll(params), leaveApi.getStats()]);
 
       setLeaves(leavesRes.data.data.leaves || []);
       setPagination(leavesRes.data.data.pagination || { total: 0, pages: 1 });
       setStats(statsRes.data.data || { total: 0, pending: 0, approved: 0, declined: 0, cancelled: 0 });
-    } catch (err) {
+    } catch {
       toast.error("Failed to load leave requests");
     } finally {
       setLoading(false);
@@ -57,146 +83,154 @@ export default function LeaveManagement() {
     fetchData();
   }, [fetchData]);
 
+  const updateFilter = (key, value) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+    setCurrentPage(1);
+  };
+
+  const clearFilters = () => {
+    setFilters(initialFilters);
+    setCurrentPage(1);
+  };
+
   const displayed = searchQuery
-    ? leaves.filter((l) => {
-        const emp = l.employeeId;
-        const name = emp ? `${emp.firstName} ${emp.lastName}`.toLowerCase() : "";
+    ? leaves.filter((leave) => {
+        const employee = leave.employeeId;
+        const name = employee ? `${employee.firstName} ${employee.lastName}`.toLowerCase() : "";
         return name.includes(searchQuery.toLowerCase());
       })
     : leaves;
 
+  const activeFilterCount = Object.values(filters).filter((value) => value !== "all").length;
+
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <div className="bg-[hsl(var(--color-primary))] text-white px-4 sm:px-6 py-4 flex items-center justify-between flex-shrink-0">
-        <h1 className="text-base sm:text-lg font-semibold">Leave Management</h1>
-        <div className="flex items-center gap-2">
-          {/* Filter toggle — all screen sizes */}
-          <button
-            onClick={() => setShowFilters((v) => !v)}
-            className="p-2 hover:bg-[hsl(var(--color-primary-dark))] rounded-lg transition-colors"
-            title={showFilters ? "Hide filters" : "Show filters"}
-          >
-            <SlidersHorizontal className="w-5 h-5" />
-          </button>
-          <button
-            onClick={fetchData}
-            className="p-2 hover:bg-[hsl(var(--color-primary-dark))] rounded-lg transition-colors"
-            title="Refresh"
-          >
-            <RotateCcw className={`w-5 h-5 ${loading ? "animate-spin" : ""}`} />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex flex-1 min-h-0 bg-[hsl(var(--color-background))]">
-
-        {/* ── Mobile filter drawer overlay (< lg) ── */}
-        {showFilters && (
-          <div className="fixed inset-0 z-50 lg:hidden">
-            <div
-              className="absolute inset-0 bg-black/50"
-              onClick={() => setShowFilters(false)}
-            />
-            <div className="absolute left-0 top-0 h-full w-72 bg-[hsl(var(--color-card))] shadow-xl overflow-y-auto">
-              <LeaveFilters
-                filters={filters}
-                setFilters={setFilters}
-                onClose={() => setShowFilters(false)}
-              />
-            </div>
+    <div className="leave-page">
+      <div className="leave-page-shell">
+        <header className="leave-heading">
+          <div>
+            <p className="eyebrow">TIME FOR YOUR TEAM</p>
+            <h1>Leave management<span>.</span></h1>
+            <p>Review requests, make decisions, and keep team cover in view.</p>
           </div>
-        )}
+          <div className="leave-heading-actions">
+            <span className="date-chip"><CalendarDays size={15} />{formatDate(new Date())}</span>
+            <button type="button" className="icon-button leave-refresh-button" onClick={fetchData} aria-label="Refresh leave requests">
+              <RotateCcw size={17} className={loading ? "animate-spin" : ""} />
+            </button>
+            <button type="button" className="solid-link" onClick={() => setShowAddModal(true)}>
+              <Plus size={16} />Add leave
+            </button>
+          </div>
+        </header>
 
-        {/* ── Desktop sidebar (lg+) — shown/hidden via showFilters ── */}
-        {showFilters && (
-          <div className="hidden lg:block w-64 bg-[hsl(var(--color-card))] border-r border-[hsl(var(--color-border))] overflow-y-auto flex-shrink-0">
-            <LeaveFilters
-              filters={filters}
-              setFilters={setFilters}
-              onClose={() => setShowFilters(false)}
+        <LeaveStats stats={stats} />
+
+        <section className="leave-command-bar" aria-label="Leave request filters">
+          <div className="leave-search">
+            <Search size={16} aria-hidden="true" />
+            <Input
+              type="search"
+              placeholder="Search employee"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              aria-label="Search leave requests by employee"
+              className="pl-10"
             />
           </div>
-        )}
 
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          {/* Stats + Search/Actions bar */}
-          <div className="p-4 bg-[hsl(var(--color-card))] border-b border-[hsl(var(--color-border))] flex-shrink-0">
-            <LeaveStats stats={stats} />
-
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mt-4">
-              {/* Search */}
-              <div className="relative flex-1 sm:max-w-xs">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--color-foreground-secondary))]" />
-                <Input
-                  type="text"
-                  placeholder="Search by employee name..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-
-              {/* Actions */}
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <Button
-                  onClick={() => setShowAddModal(true)}
-                  className="bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary-dark))] text-white flex items-center gap-2 flex-shrink-0"
+          <div className="leave-status-filter">
+            <span className="leave-filter-label">Status</span>
+            <div className="leave-status-tags" role="group" aria-label="Filter by leave status">
+              {STATUS_OPTIONS.map(([value, label]) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={`leave-status-tag ${filters.status === value ? "is-active" : ""}`}
+                  aria-pressed={filters.status === value}
+                  onClick={() => updateFilter("status", value)}
                 >
-                  <Plus className="w-4 h-4" />
-                  <span className="hidden sm:inline">Add New Leave</span>
-                  <span className="sm:hidden">Add</span>
-                </Button>
-                <Select
-                  value={itemsPerPage}
-                  onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-                  className="w-20 flex-shrink-0"
-                >
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </Select>
-              </div>
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* Table */}
-          <div className="flex-1 overflow-auto p-4">
-            {loading ? (
-              <div className="flex items-center justify-center h-48 text-sm text-[hsl(var(--color-foreground-secondary))]">
-                Loading leave requests...
-              </div>
-            ) : (
-              <LeaveTable leaveRequests={displayed} onRefresh={fetchData} />
-            )}
+          <div className="leave-dropdown-filters">
+            <label className="leave-dropdown-label">
+              <span>Period</span>
+              <Select value={filters.leavePeriod} onChange={(event) => updateFilter("leavePeriod", event.target.value)} aria-label="Leave period">
+                <option value="all">All time</option>
+                <option value="current_prev_month">Current &amp; previous month</option>
+                <option value="current_month">Current month</option>
+                <option value="last_3_months">Last 3 months</option>
+                <option value="last_6_months">Last 6 months</option>
+                <option value="this_year">This year</option>
+              </Select>
+            </label>
+            <label className="leave-dropdown-label">
+              <span>Type</span>
+              <Select value={filters.leaveCategory} onChange={(event) => updateFilter("leaveCategory", event.target.value)} aria-label="Leave type">
+                <option value="all">All types</option>
+                <option value="annual">Annual leave</option>
+                <option value="sick">Sick leave</option>
+                <option value="personal">Personal leave</option>
+                <option value="unpaid">Unpaid leave</option>
+              </Select>
+            </label>
+          </div>
 
-            {/* Pagination */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mt-4 gap-2 text-sm text-[hsl(var(--color-foreground-secondary))]">
+          {activeFilterCount > 0 && (
+            <button type="button" className="leave-clear-filters" onClick={clearFilters}>
+              <X size={14} />Clear filters
+            </button>
+          )}
+        </section>
+
+        <section className="leave-records-card" aria-label="Leave requests">
+          <header className="leave-records-heading">
+            <div>
+              <div className="panel-title-line"><h2>Leave requests</h2><span className="subtle-pill">{pagination.total} total</span></div>
+              <p>{activeFilterCount ? `${activeFilterCount} filter${activeFilterCount === 1 ? "" : "s"} applied to this view.` : "All requests across your team."}</p>
+            </div>
+            <label className="leave-rows-control">
+              <span>Rows</span>
+              <Select
+                value={itemsPerPage}
+                onChange={(event) => { setItemsPerPage(Number(event.target.value)); setCurrentPage(1); }}
+                aria-label="Rows per page"
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </Select>
+            </label>
+          </header>
+
+          {loading ? (
+            <div className="leave-loading" aria-live="polite"><RotateCcw size={20} className="animate-spin" />Loading leave requests…</div>
+          ) : (
+            <LeaveTable leaveRequests={displayed} onRefresh={fetchData} />
+          )}
+
+          {!loading && (
+            <footer className="data-pagination leave-pagination">
               <span>
                 {pagination.total > 0
                   ? `Showing ${Math.min((currentPage - 1) * itemsPerPage + 1, pagination.total)}–${Math.min(currentPage * itemsPerPage, pagination.total)} of ${pagination.total}`
                   : "No records"}
               </span>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setCurrentPage((p) => p - 1)}>
-                  Previous
-                </Button>
-                <Button variant="outline" size="sm" disabled={currentPage >= pagination.pages} onClick={() => setCurrentPage((p) => p + 1)}>
-                  Next
-                </Button>
+              <div>
+                <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setCurrentPage((page) => page - 1)}>Previous</Button>
+                <span className="leave-page-number">Page {currentPage} of {pagination.pages || 1}</span>
+                <Button variant="outline" size="sm" disabled={currentPage >= pagination.pages} onClick={() => setCurrentPage((page) => page + 1)}>Next</Button>
               </div>
-            </div>
-          </div>
-        </div>
+            </footer>
+          )}
+        </section>
       </div>
 
-      <AddLeaveModal
-        open={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        onSuccess={fetchData}
-      />
+      <AddLeaveModal open={showAddModal} onClose={() => setShowAddModal(false)} onSuccess={fetchData} />
     </div>
   );
 }

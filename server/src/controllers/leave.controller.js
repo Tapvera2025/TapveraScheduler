@@ -6,9 +6,9 @@ const Employee = require('../models/Employee');
 
 /** GET /leave  — all leave requests for the company */
 const getAllLeaves = asyncHandler(async (req, res) => {
-  const { status, employeeId, leaveType, page, limit } = req.query;
+  const { status, employeeId, leaveType, startDate, endDate, page, limit } = req.query;
   const result = await leaveService.getAllLeaves(req.user.companyId, {
-    status, employeeId, leaveType,
+    status, employeeId, leaveType, startDate, endDate,
     page: page ? parseInt(page) : 1,
     limit: limit ? parseInt(limit) : 25,
   });

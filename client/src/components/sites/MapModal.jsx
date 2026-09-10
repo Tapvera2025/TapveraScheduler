@@ -1,16 +1,77 @@
-import { useEffect, useRef, useState } from "react";
+import Modal from "../ui/Modal";
+import { useEffect, useState, useRef } from "react";
 import { X, MapPin, Maximize2, Navigation, Loader2 } from "lucide-react";
-import { Select } from "../ui/Select";
 import { Input } from "../ui/Input";
-import { AUSTRALIAN_STATES } from "../../constants/locations";
+import { StateInput } from "../ui/StateInput";
+import { STATE_GROUPS } from "../../constants/locations";
 import toast from "react-hot-toast";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Circle,
+  useMap,
+  useMapEvents,
+} from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { geocodingApi } from "../../lib/api";
 
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+// Leaflet's default marker icon breaks under Vite because the bundler can't
+// resolve the relative image URLs baked into leaflet's CSS. Rebind them to
+// the unpkg CDN copies so the pin renders correctly.
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
+const TILES = {
+  roadmap: {
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+  },
+  satellite: {
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attribution:
+      "Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+    maxZoom: 19,
+  },
+};
+
+/**
+ * Child helper: keeps the imperative Leaflet map in sync with our React
+ * state (recenter when `coords` changes, invalidateSize on fullscreen toggle).
+ * Also captures clicks on the map surface to move the marker.
+ */
+function MapController({ coords, onMapClick, fullscreenTick }) {
+  const map = useMap();
+
+  useEffect(() => {
+    map.setView([coords.lat, coords.lng]);
+  }, [coords.lat, coords.lng, map]);
+
+  useEffect(() => {
+    // Wait for the container transition to settle, then reflow tiles.
+    const t = setTimeout(() => map.invalidateSize(), 200);
+    return () => clearTimeout(t);
+  }, [fullscreenTick, map]);
+
+  useMapEvents({
+    click(e) {
+      onMapClick(e.latlng.lat, e.latlng.lng);
+    },
+  });
+
+  return null;
+}
 
 export default function MapModal({
   onClose,
   onSave,
-  // initial values passed from site form
   initLatitude,
   initLongitude,
   initAddress,
@@ -19,14 +80,9 @@ export default function MapModal({
   initPostalCode,
   initGeoFenceRadius,
 }) {
-  const mapRef = useRef(null);
-  const googleMapRef = useRef(null);
-  const markerRef = useRef(null);
-  const circleRef = useRef(null);
-  const geocoderRef = useRef(null);
-  const [mapReady, setMapReady] = useState(false);
-  const [mapView, setMapView] = useState("roadmap"); // "roadmap" | "satellite"
+  const [mapView, setMapView] = useState("roadmap");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fullscreenTick, setFullscreenTick] = useState(0);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
 
@@ -42,90 +98,63 @@ export default function MapModal({
     lng: initLongitude ? parseFloat(initLongitude) : 151.2093,
   });
 
+  const markerRef = useRef(null);
   const radiusMeters = geoFenceRadius * 1000;
 
-  // Helper function to map full state name to abbreviation
+  // Nominatim can return the state as a full name; match against AU + IN
+  // presets, otherwise return the raw string so <StateInput> shows custom mode.
   const mapStateToCode = (stateName) => {
     if (!stateName) return "";
-    const state = AUSTRALIAN_STATES.find(
-      (s) => s.name.toLowerCase() === stateName.toLowerCase()
-    );
-    if (state) return state.code;
-    const stateByCode = AUSTRALIAN_STATES.find(
-      (s) => s.code.toLowerCase() === stateName.toLowerCase()
-    );
-    return stateByCode ? stateByCode.code : stateName;
+    const needle = String(stateName).toLowerCase();
+    for (const group of STATE_GROUPS) {
+      const byName = group.options.find((s) => s.name.toLowerCase() === needle);
+      if (byName) return byName.code;
+      const byCode = group.options.find((s) => s.code.toLowerCase() === needle);
+      if (byCode) return byCode.code;
+    }
+    return stateName;
   };
 
-  // Reverse geocode coordinates to get address
   const reverseGeocode = async (lat, lng) => {
-    if (!geocoderRef.current) return;
-
     setGeocoding(true);
     try {
-      const result = await new Promise((resolve, reject) => {
-        geocoderRef.current.geocode(
-          { location: { lat, lng } },
-          (results, status) => {
-            if (status === "OK" && results[0]) {
-              resolve(results[0]);
-            } else {
-              reject(new Error(`Geocoding failed: ${status}`));
-            }
-          }
-        );
-      });
+      const response = await geocodingApi.reverse(lat, lng);
+      const data = response.data?.data;
+      if (!data) throw new Error("No address found");
 
-      // Parse address components
-      const addressComponents = result.address_components;
-      let street = "";
-      let suburb = "";
-      let stateCode = "";
-      let postal = "";
-
-      addressComponents.forEach((component) => {
-        const types = component.types;
-        if (types.includes("street_number")) {
-          street = component.long_name + " ";
-        }
-        if (types.includes("route")) {
-          street += component.long_name;
-        }
-        if (types.includes("locality") || types.includes("postal_town")) {
-          suburb = component.long_name;
-        }
-        if (types.includes("administrative_area_level_1")) {
-          stateCode = mapStateToCode(component.short_name);
-        }
-        if (types.includes("postal_code")) {
-          postal = component.long_name;
-        }
-      });
-
-      // Update address fields
-      if (street) setAddress(street.trim());
-      if (suburb) setTownSuburb(suburb);
-      if (stateCode) setState(stateCode);
-      if (postal) setPostalCode(postal);
+      const addr = data.address || {};
+      if (addr.road || addr.street) setAddress(addr.road || addr.street);
+      if (addr.suburb || addr.town || addr.city) {
+        setTownSuburb(addr.suburb || addr.town || addr.city);
+      }
+      if (addr.state) setState(mapStateToCode(addr.state));
+      if (addr.postcode) setPostalCode(addr.postcode);
 
       toast.success("Address updated from location");
     } catch (error) {
       console.error("Reverse geocoding error:", error);
-
-      // Provide helpful error message
-      if (error.message.includes("REQUEST_DENIED")) {
-        toast.error("Google Maps API error. Please enable Geocoding API in Google Cloud Console.");
-      } else if (error.message.includes("OVER_QUERY_LIMIT")) {
-        toast.error("API quota exceeded. Please check your Google Cloud billing.");
+      const msg = error.response?.data?.message || error.message;
+      if (msg?.toLowerCase().includes("rate")) {
+        toast.error("Address lookup rate-limited. Please wait a moment.");
       } else {
-        console.warn("Auto-fill disabled - you can still manually enter the address");
+        console.warn("Auto-fill disabled - you can still enter the address manually");
       }
     } finally {
       setGeocoding(false);
     }
   };
 
-  // Get user's live location
+  const handleMapClick = (lat, lng) => {
+    setCoords({ lat, lng });
+    reverseGeocode(lat, lng);
+  };
+
+  const handleMarkerDragEnd = (e) => {
+    const { lat, lng } = e.target.getLatLng();
+    setCoords({ lat, lng });
+    reverseGeocode(lat, lng);
+  };
+
   const handleLiveLocation = () => {
     if (!navigator.geolocation) {
       toast.error("Geolocation is not supported by your browser");
@@ -137,154 +166,26 @@ export default function MapModal({
       (position) => {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
-
-        // Update map and marker
         setCoords({ lat, lng });
-        if (googleMapRef.current) {
-          googleMapRef.current.setCenter({ lat, lng });
-          googleMapRef.current.setZoom(16);
-        }
-        if (markerRef.current) {
-          markerRef.current.setPosition({ lat, lng });
-        }
-        if (circleRef.current) {
-          circleRef.current.setCenter({ lat, lng });
-        }
-
-        // Reverse geocode to get address
         reverseGeocode(lat, lng);
         setGettingLocation(false);
         toast.success("Location updated");
       },
       (error) => {
         setGettingLocation(false);
-        let errorMessage = "Failed to get your location";
+        let msg = "Failed to get your location";
         if (error.code === error.PERMISSION_DENIED) {
-          errorMessage = "Location permission denied. Please enable location access.";
+          msg = "Location permission denied. Please enable location access.";
         } else if (error.code === error.POSITION_UNAVAILABLE) {
-          errorMessage = "Location information unavailable";
+          msg = "Location information unavailable";
         } else if (error.code === error.TIMEOUT) {
-          errorMessage = "Location request timed out";
+          msg = "Location request timed out";
         }
-        toast.error(errorMessage);
+        toast.error(msg);
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
   };
-
-  // Load Google Maps script dynamically
-  useEffect(() => {
-    const loadGoogleMaps = () => {
-      if (window.google && window.google.maps) {
-        setMapReady(true);
-        return;
-      }
-
-      if (document.querySelector('script[src*="maps.googleapis.com"]')) {
-        // Script is already loading, wait for it
-        const checkInterval = setInterval(() => {
-          if (window.google && window.google.maps) {
-            clearInterval(checkInterval);
-            setMapReady(true);
-          }
-        }, 100);
-        return;
-      }
-
-      const script = document.createElement("script");
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places`;
-      script.async = true;
-      script.defer = true;
-      script.onload = () => setMapReady(true);
-      script.onerror = () => {
-        toast.error("Failed to load Google Maps");
-      };
-      document.head.appendChild(script);
-    };
-
-    loadGoogleMaps();
-  }, []);
-
-  // Initialize map once Google Maps is ready
-  useEffect(() => {
-    if (!mapReady || !mapRef.current || googleMapRef.current) return;
-
-    const map = new window.google.maps.Map(mapRef.current, {
-      center: { lat: coords.lat, lng: coords.lng },
-      zoom: 15,
-      mapTypeId: mapView,
-      streetViewControl: false,
-      mapTypeControl: false,
-      fullscreenControl: false,
-    });
-
-    const marker = new window.google.maps.Marker({
-      position: { lat: coords.lat, lng: coords.lng },
-      map: map,
-      draggable: true,
-      title: "Site Location",
-    });
-
-    const circle = new window.google.maps.Circle({
-      map: map,
-      center: { lat: coords.lat, lng: coords.lng },
-      radius: radiusMeters,
-      strokeColor: "#dc2626",
-      strokeOpacity: 0.8,
-      strokeWeight: 2,
-      fillColor: "#dc2626",
-      fillOpacity: 0.15,
-    });
-
-    const geocoder = new window.google.maps.Geocoder();
-
-    // Handle marker drag
-    marker.addListener("dragend", (e) => {
-      const lat = e.latLng.lat();
-      const lng = e.latLng.lng();
-      circle.setCenter({ lat, lng });
-      setCoords({ lat, lng });
-      reverseGeocode(lat, lng);
-    });
-
-    // Handle map click
-    map.addListener("click", (e) => {
-      const lat = e.latLng.lat();
-      const lng = e.latLng.lng();
-      marker.setPosition({ lat, lng });
-      circle.setCenter({ lat, lng });
-      setCoords({ lat, lng });
-      reverseGeocode(lat, lng);
-    });
-
-    googleMapRef.current = map;
-    markerRef.current = marker;
-    circleRef.current = circle;
-    geocoderRef.current = geocoder;
-
-    return () => {
-      if (marker) marker.setMap(null);
-      if (circle) circle.setMap(null);
-    };
-  }, [mapReady]);
-
-  // Update map type when mapView changes
-  useEffect(() => {
-    if (googleMapRef.current) {
-      googleMapRef.current.setMapTypeId(mapView);
-    }
-  }, [mapView]);
-
-  // Update circle radius when slider changes
-  useEffect(() => {
-    if (circleRef.current) {
-      circleRef.current.setRadius(geoFenceRadius * 1000);
-    }
-  }, [geoFenceRadius]);
 
   const handleKeepChanges = () => {
     onSave({
@@ -299,37 +200,36 @@ export default function MapModal({
     onClose();
   };
 
-  // Invalidate map size when fullscreen toggled
+  // Bump this counter whenever fullscreen changes so MapController re-runs
+  // invalidateSize() after the container transitions.
   useEffect(() => {
-    if (googleMapRef.current) {
-      setTimeout(() => {
-        window.google.maps.event.trigger(googleMapRef.current, "resize");
-        googleMapRef.current.setCenter(coords);
-      }, 100);
-    }
+    setFullscreenTick((n) => n + 1);
   }, [isFullscreen]);
 
+  const tile = TILES[mapView];
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 z-[60] flex items-center justify-center p-0 sm:p-4">
+    <Modal onClose={onClose} label="Site map">
       <div
-        className={`bg-white flex flex-col transition-all ${
+        className={`modal-surface flex flex-col transition-all ${
           isFullscreen
             ? "w-full h-full rounded-none"
             : "w-full h-full sm:h-auto sm:max-w-4xl sm:rounded-lg"
         } shadow-2xl`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-3 bg-[#2e6da4] sm:rounded-t-lg flex-shrink-0">
-          <div className="flex items-center gap-2 text-white">
+        <div className="modal-header flex items-center justify-between px-4 sm:px-5 py-3 sm:py-3 flex-shrink-0">
+          <div className="flex items-center gap-2">
             <MapPin className="w-5 h-5 sm:w-4 sm:h-4" />
             <span className="font-semibold text-base sm:text-sm">
               {onSave ? "Site Map" : "View Site Location"}
             </span>
           </div>
           <button
+            type="button"
+            aria-label="Close dialog"
             onClick={onClose}
-            className="text-white hover:text-gray-200 transition-colors p-1 touch-manipulation"
-            aria-label="Close"
+            className="text-[hsl(var(--color-foreground-secondary))] hover:text-[hsl(var(--color-foreground))] transition-colors p-1 touch-manipulation"
           >
             <X className="w-6 h-6 sm:w-4 sm:h-4" />
           </button>
@@ -342,14 +242,16 @@ export default function MapModal({
             {onSave && (
               <button
                 onClick={handleKeepChanges}
-                className="px-4 sm:px-5 py-2.5 sm:py-2 bg-[#2e6da4] text-white text-sm sm:text-sm rounded hover:bg-[#245a8a] transition-colors font-medium touch-manipulation flex-1 sm:flex-none"
+                className="px-4 sm:px-5 py-2.5 sm:py-2 bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] text-sm sm:text-sm rounded hover:bg-[hsl(var(--color-primary-hover))] transition-colors font-medium touch-manipulation flex-1 sm:flex-none"
               >
                 Keep Changes
               </button>
             )}
             <button
+              type="button"
+              aria-label="Close dialog"
               onClick={onClose}
-              className="px-4 sm:px-5 py-2.5 sm:py-2 bg-white text-gray-700 text-sm sm:text-sm rounded border border-gray-300 hover:bg-gray-50 transition-colors font-medium touch-manipulation flex-1 sm:flex-none"
+              className="px-4 sm:px-5 py-2.5 sm:py-2 bg-[hsl(var(--color-card))] text-[hsl(var(--color-foreground-secondary))] text-sm sm:text-sm rounded border border-[hsl(var(--color-border))] hover:bg-[hsl(var(--color-card))] transition-colors font-medium touch-manipulation flex-1 sm:flex-none"
             >
               {onSave ? "Cancel" : "Close"}
             </button>
@@ -358,7 +260,7 @@ export default function MapModal({
           {/* Address Fields */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-x-6 sm:gap-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <label className="text-sm text-gray-600 sm:w-24 flex-shrink-0 font-medium">
+              <label className="text-sm text-[hsl(var(--color-foreground-secondary))] sm:w-24 flex-shrink-0 font-medium">
                 Address
               </label>
               <Input
@@ -369,24 +271,17 @@ export default function MapModal({
               />
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <label className="text-sm text-gray-600 sm:w-24 flex-shrink-0 font-medium">
+              <label className="text-sm text-[hsl(var(--color-foreground-secondary))] sm:w-24 flex-shrink-0 font-medium">
                 State
               </label>
-              <Select
+              <StateInput
                 value={state}
-                onChange={(e) => setState(e.target.value)}
+                onChange={setState}
                 className="flex-1"
-              >
-                <option value="">Select State</option>
-                {AUSTRALIAN_STATES.map((st) => (
-                  <option key={st.code} value={st.code}>
-                    {st.code} - {st.name}
-                  </option>
-                ))}
-              </Select>
+              />
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <label className="text-sm text-gray-600 sm:w-24 flex-shrink-0 font-medium">
+              <label className="text-sm text-[hsl(var(--color-foreground-secondary))] sm:w-24 flex-shrink-0 font-medium">
                 Town/Suburb
               </label>
               <Input
@@ -396,7 +291,7 @@ export default function MapModal({
               />
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <label className="text-sm text-gray-600 sm:w-24 flex-shrink-0 font-medium">
+              <label className="text-sm text-[hsl(var(--color-foreground-secondary))] sm:w-24 flex-shrink-0 font-medium">
                 Postal Code
               </label>
               <Input
@@ -409,11 +304,11 @@ export default function MapModal({
 
           {/* GeoFence Slider */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-2">
               GeoFence Area
             </label>
             <div className="flex items-center gap-2 sm:gap-3">
-              <span className="text-xs sm:text-xs bg-gray-700 text-white px-2 py-1 rounded whitespace-nowrap">
+              <span className="text-xs sm:text-xs bg-[hsl(var(--color-foreground))] text-[hsl(var(--color-background))] px-2 py-1 rounded whitespace-nowrap">
                 {geoFenceRadius.toFixed(1)} km
               </span>
               <div className="flex-1 relative">
@@ -426,11 +321,14 @@ export default function MapModal({
                   onChange={(e) => setGeoFenceRadius(parseFloat(e.target.value))}
                   className="w-full h-2 sm:h-2 rounded-lg appearance-none cursor-pointer touch-manipulation"
                   style={{
-                    background: `linear-gradient(to right, #dc2626 0%, #dc2626 ${((geoFenceRadius - 0.1) / 4.9) * 100}%, #d1d5db ${((geoFenceRadius - 0.1) / 4.9) * 100}%, #d1d5db 100%)`,
+                    background: `linear-gradient(to right, #dc2626 0%, #dc2626 ${
+                      ((geoFenceRadius - 0.1) / 4.9) * 100
+                    }%, #d1d5db ${
+                      ((geoFenceRadius - 0.1) / 4.9) * 100
+                    }%, #d1d5db 100%)`,
                   }}
                 />
-                {/* Tick marks - hidden on mobile */}
-                <div className="hidden sm:flex justify-between text-[10px] text-gray-400 mt-1 px-0.5">
+                <div className="hidden sm:flex justify-between text-[10px] text-[hsl(var(--color-foreground-muted))] mt-1 px-0.5">
                   <span>0.1</span>
                   <span>1.3</span>
                   <span>2.6</span>
@@ -438,103 +336,129 @@ export default function MapModal({
                   <span>5</span>
                 </div>
               </div>
-              <span className="hidden sm:inline text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded border border-gray-200 whitespace-nowrap">
+              <span className="hidden sm:inline text-xs bg-[hsl(var(--color-surface-elevated))] text-[hsl(var(--color-foreground-secondary))] px-2 py-0.5 rounded border border-[hsl(var(--color-border))] whitespace-nowrap">
                 5 km
               </span>
             </div>
           </div>
 
           {/* Map */}
-          <div className="border border-gray-300 rounded overflow-hidden flex flex-col flex-1 min-h-[300px] sm:min-h-[340px]">
-            {/* Map controls */}
-            <div className="relative flex-shrink-0">
-              {/* Map/Satellite Toggle */}
-              <div className="absolute top-3 sm:top-2 left-3 sm:left-2 z-[1000] flex border border-gray-300 rounded overflow-hidden shadow-md bg-white">
-                <button
-                  onClick={() => setMapView("roadmap")}
-                  className={`px-4 py-2 sm:px-3 sm:py-1 text-sm sm:text-xs font-medium transition-colors touch-manipulation ${
-                    mapView === "roadmap"
-                      ? "bg-white text-gray-900"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-50"
-                  }`}
-                >
-                  Map
-                </button>
-                <button
-                  onClick={() => setMapView("satellite")}
-                  className={`px-4 py-2 sm:px-3 sm:py-1 text-sm sm:text-xs font-medium transition-colors border-l border-gray-300 touch-manipulation ${
-                    mapView === "satellite"
-                      ? "bg-white text-gray-900"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-50"
-                  }`}
-                >
-                  Satellite
-                </button>
-              </div>
-
-              {/* Live Location Button */}
+          <div className="border border-[hsl(var(--color-border))] rounded overflow-hidden flex flex-col flex-1 min-h-[300px] sm:min-h-[340px] relative">
+            {/* Map/Satellite Toggle */}
+            <div className="absolute top-3 sm:top-2 left-3 sm:left-2 z-[1000] flex border border-[hsl(var(--color-border))] rounded overflow-hidden shadow-md bg-[hsl(var(--color-card))]">
               <button
-                onClick={handleLiveLocation}
-                disabled={gettingLocation || geocoding}
-                className="absolute top-14 sm:top-2 left-3 sm:left-1/2 sm:-translate-x-1/2 z-[1000] bg-white border border-gray-300 rounded px-4 py-2 sm:px-3 sm:py-1.5 shadow-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 touch-manipulation"
-                title="Get my current location"
+                onClick={() => setMapView("roadmap")}
+                className={`px-4 py-2 sm:px-3 sm:py-1 text-sm sm:text-xs font-medium transition-colors touch-manipulation ${
+                  mapView === "roadmap"
+                    ? "bg-[hsl(var(--color-card))] text-[hsl(var(--color-foreground))]"
+                    : "bg-[hsl(var(--color-surface-elevated))] text-[hsl(var(--color-foreground-secondary))] hover:bg-[hsl(var(--color-card))]"
+                }`}
               >
-                {gettingLocation || geocoding ? (
-                  <>
-                    <Loader2 className="w-5 h-5 sm:w-4 sm:h-4 text-blue-600 animate-spin" />
-                    <span className="text-sm sm:text-xs font-medium text-gray-700 whitespace-nowrap">
-                      {gettingLocation ? "Getting..." : "Loading..."}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <Navigation className="w-5 h-5 sm:w-4 sm:h-4 text-blue-600" />
-                    <span className="text-sm sm:text-xs font-medium text-gray-700 whitespace-nowrap">
-                      Use My Location
-                    </span>
-                  </>
-                )}
+                Map
               </button>
-
-              {/* Fullscreen button - Desktop only */}
               <button
-                onClick={() => setIsFullscreen((v) => !v)}
-                className="hidden sm:block absolute top-2 right-2 z-[1000] bg-white border border-gray-300 rounded p-1 shadow-sm hover:bg-gray-50 transition-colors"
+                onClick={() => setMapView("satellite")}
+                className={`px-4 py-2 sm:px-3 sm:py-1 text-sm sm:text-xs font-medium transition-colors border-l border-[hsl(var(--color-border))] touch-manipulation ${
+                  mapView === "satellite"
+                    ? "bg-[hsl(var(--color-card))] text-[hsl(var(--color-foreground))]"
+                    : "bg-[hsl(var(--color-surface-elevated))] text-[hsl(var(--color-foreground-secondary))] hover:bg-[hsl(var(--color-card))]"
+                }`}
               >
-                <Maximize2 className="w-4 h-4 text-gray-600" />
+                Satellite
               </button>
             </div>
 
-            {!mapReady && (
-              <div className="flex items-center justify-center h-64 sm:h-80 bg-gray-100 text-gray-500 text-sm">
-                Loading map...
-              </div>
-            )}
+            {/* Live Location Button */}
+            <button
+              onClick={handleLiveLocation}
+              disabled={gettingLocation || geocoding}
+              className="absolute top-14 sm:top-2 left-3 sm:left-1/2 sm:-translate-x-1/2 z-[1000] bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] rounded px-4 py-2 sm:px-3 sm:py-1.5 shadow-md hover:bg-[hsl(var(--color-card))] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 touch-manipulation"
+              title="Get my current location"
+            >
+              {gettingLocation || geocoding ? (
+                <>
+                  <Loader2 className="w-5 h-5 sm:w-4 sm:h-4 text-[hsl(var(--color-info))] animate-spin" />
+                  <span className="text-sm sm:text-xs font-medium text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
+                    {gettingLocation ? "Getting..." : "Loading..."}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Navigation className="w-5 h-5 sm:w-4 sm:h-4 text-[hsl(var(--color-info))]" />
+                  <span className="text-sm sm:text-xs font-medium text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
+                    Use My Location
+                  </span>
+                </>
+              )}
+            </button>
+
+            {/* Fullscreen button - Desktop only */}
+            <button
+              onClick={() => setIsFullscreen((v) => !v)}
+              className="hidden sm:block absolute top-2 right-2 z-[1000] bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] rounded p-1 shadow-sm hover:bg-[hsl(var(--color-card))] transition-colors"
+            >
+              <Maximize2 className="w-4 h-4 text-[hsl(var(--color-foreground-secondary))]" />
+            </button>
+
             <div
-              ref={mapRef}
               style={{
                 height: isFullscreen
                   ? "calc(100vh - 320px)"
                   : window.innerWidth < 640
-                  ? "300px"
-                  : "380px",
+                    ? "300px"
+                    : "380px",
                 width: "100%",
-                display: mapReady ? "block" : "none",
               }}
-            />
+            >
+              <MapContainer
+                center={[coords.lat, coords.lng]}
+                zoom={15}
+                style={{ height: "100%", width: "100%" }}
+                scrollWheelZoom
+              >
+                <TileLayer
+                  key={mapView}
+                  url={tile.url}
+                  attribution={tile.attribution}
+                  maxZoom={tile.maxZoom}
+                />
+                <Marker
+                  position={[coords.lat, coords.lng]}
+                  draggable
+                  ref={markerRef}
+                  eventHandlers={{ dragend: handleMarkerDragEnd }}
+                />
+                <Circle
+                  center={[coords.lat, coords.lng]}
+                  radius={radiusMeters}
+                  pathOptions={{
+                    color: "#dc2626",
+                    weight: 2,
+                    opacity: 0.8,
+                    fillColor: "#dc2626",
+                    fillOpacity: 0.15,
+                  }}
+                />
+                <MapController
+                  coords={coords}
+                  onMapClick={handleMapClick}
+                  fullscreenTick={fullscreenTick}
+                />
+              </MapContainer>
+            </div>
           </div>
 
           {/* Coordinates hint */}
-          {mapReady && (
-            <p className="text-xs sm:text-xs text-gray-400 text-center -mt-2 px-2">
-              <span className="hidden sm:inline">Click on the map or drag the marker to set the site location &mdash;{" "}</span>
-              <span className="font-mono text-[10px] sm:text-xs">
-                {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
-              </span>
-            </p>
-          )}
+          <p className="text-xs sm:text-xs text-[hsl(var(--color-foreground-muted))] text-center -mt-2 px-2">
+            <span className="hidden sm:inline">
+              Click on the map or drag the marker to set the site location &mdash;{" "}
+            </span>
+            <span className="font-mono text-[10px] sm:text-xs">
+              {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
+            </span>
+          </p>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

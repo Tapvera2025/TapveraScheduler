@@ -1,19 +1,16 @@
-import { useState, useRef, useEffect } from "react";
+import Modal from "../ui/Modal";
+import ResponsiveTable from "../ui/ResponsiveTable";
+import { useState, useEffect } from "react";
 import { X, Plus, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { siteApi, clientApi } from "../../lib/api";
-import staticClients from "../../data/clients";
 
 export default function AddMultipleSitesModal({ onClose, onSuccess }) {
-  const [isDragging, setIsDragging] = useState(false);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const modalRef = useRef(null);
   const [submitting, setSubmitting] = useState(false);
-  const [clients, setClients] = useState(staticClients);
+  const [clients, setClients] = useState([]);
 
   const [sites, setSites] = useState([
     {
@@ -86,28 +83,7 @@ export default function AddMultipleSitesModal({ onClose, onSuccess }) {
     fetchClients();
   }, []);
 
-  const handleMouseDown = (e) => {
-    if (e.target.closest(".modal-header")) {
-      setIsDragging(true);
-      setDragStart({
-        x: e.clientX - position.x,
-        y: e.clientY - position.y,
-      });
-    }
-  };
 
-  const handleMouseMove = (e) => {
-    if (isDragging) {
-      setPosition({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y,
-      });
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
 
   const handleAddMoreSites = () => {
     const newId = Math.max(...sites.map((s) => s.id)) + 1;
@@ -181,28 +157,18 @@ export default function AddMultipleSitesModal({ onClose, onSuccess }) {
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center"
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-    >
+    <Modal onClose={onClose} label="Add multiple sites">
       <div
-        ref={modalRef}
-        className="bg-[hsl(var(--color-card))] rounded-lg shadow-2xl w-full max-w-6xl"
-        style={{
-          transform: `translate(${position.x}px, ${position.y}px)`,
-          cursor: isDragging ? "grabbing" : "default",
-        }}
+        className="modal-surface modal-responsive w-full max-w-6xl"
       >
-        {/* Header - Draggable */}
+        {/* Header */}
         <div
-          className="modal-header flex items-center justify-between px-6 py-4 border-b border-[hsl(var(--color-border))] bg-[hsl(var(--color-surface-elevated))] rounded-t-lg cursor-grab active:cursor-grabbing"
-          onMouseDown={handleMouseDown}
+          className="modal-header flex items-center justify-between px-6 py-4 border-b border-[hsl(var(--color-border))] bg-[hsl(var(--color-surface-elevated))] rounded-t-lg"
         >
           <h2 className="text-lg font-semibold text-[hsl(var(--color-foreground))]">
             Add Sites
           </h2>
-          <button
+          <button type="button" aria-label="Close dialog"
             onClick={onClose}
             className="p-1 hover:bg-[hsl(var(--color-border))] rounded transition-colors"
           >
@@ -213,40 +179,40 @@ export default function AddMultipleSitesModal({ onClose, onSuccess }) {
         {/* Content */}
         <div className="p-6 max-h-[70vh] overflow-y-auto">
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-[hsl(var(--color-border))]">
-                  <th className="w-10 pb-3"></th>
-                  <th className="text-left pb-3 px-2 text-sm font-medium text-[hsl(var(--color-foreground-secondary))]">
+            <ResponsiveTable className="w-full">
+              <thead role="rowgroup">
+                <tr role="row" className="border-b border-[hsl(var(--color-border))]">
+                  <th role="columnheader" scope="col" className="w-10 pb-3"></th>
+                  <th role="columnheader" scope="col" className="text-left pb-3 px-2 text-sm font-medium text-[hsl(var(--color-foreground-secondary))]">
                     Site Name
                   </th>
-                  <th className="text-left pb-3 px-2 text-sm font-medium text-[hsl(var(--color-foreground-secondary))]">
+                  <th role="columnheader" scope="col" className="text-left pb-3 px-2 text-sm font-medium text-[hsl(var(--color-foreground-secondary))]">
                     Short Name
                   </th>
-                  <th className="text-left pb-3 px-2 text-sm font-medium text-[hsl(var(--color-foreground-secondary))]">
+                  <th role="columnheader" scope="col" className="text-left pb-3 px-2 text-sm font-medium text-[hsl(var(--color-foreground-secondary))]">
                     Address
                   </th>
-                  <th className="text-left pb-3 px-2 text-sm font-medium text-[hsl(var(--color-foreground-secondary))]">
+                  <th role="columnheader" scope="col" className="text-left pb-3 px-2 text-sm font-medium text-[hsl(var(--color-foreground-secondary))]">
                     Client
                   </th>
-                  <th className="w-10 pb-3"></th>
+                  <th role="columnheader" scope="col" className="w-10 pb-3"></th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody role="rowgroup">
                 {sites.map((site, index) => (
-                  <tr
+                  <tr role="row"
                     key={site.id}
                     className="border-b border-[hsl(var(--color-border))]"
                   >
-                    <td className="py-3 px-2">
+                    <td role="cell" data-label="Include site" data-field="select" className="py-3 px-2">
                       <input
                         type="checkbox"
                         checked={site.checked}
                         onChange={() => handleCheckboxChange(site.id)}
-                        className="rounded border-[hsl(var(--color-border))] text-blue-600 focus:ring-blue-500"
+                        className="rounded border-[hsl(var(--color-border))] text-[hsl(var(--color-info))] focus:ring-[hsl(var(--color-ring))]"
                       />
                     </td>
-                    <td className="py-3 px-2">
+                    <td role="cell" data-label="Site name" data-field="wide" className="py-3 px-2">
                       <Input
                         placeholder="Site Name*"
                         value={site.siteName}
@@ -254,11 +220,11 @@ export default function AddMultipleSitesModal({ onClose, onSuccess }) {
                           handleSiteChange(site.id, "siteName", e.target.value)
                         }
                         className={
-                          index === sites.length - 1 ? "border-blue-400" : ""
+                          index === sites.length - 1 ? "border-[hsl(var(--color-info))]" : ""
                         }
                       />
                     </td>
-                    <td className="py-3 px-2">
+                    <td role="cell" data-label="Short name" data-field="wide" className="py-3 px-2">
                       <Input
                         placeholder="Short Name*"
                         value={site.shortName}
@@ -267,16 +233,16 @@ export default function AddMultipleSitesModal({ onClose, onSuccess }) {
                         }
                       />
                     </td>
-                    <td className="py-3 px-2">
+                    <td role="cell" data-label="Address" data-field="wide" className="py-3 px-2">
                       <Input
-                        placeholder="Address*"
+                        placeholder="Address"
                         value={site.address}
                         onChange={(e) =>
                           handleSiteChange(site.id, "address", e.target.value)
                         }
                       />
                     </td>
-                    <td className="py-3 px-2">
+                    <td role="cell" data-label="Client" data-field="wide" className="py-3 px-2">
                       <Select
                         value={site.client}
                         onChange={(e) =>
@@ -291,10 +257,10 @@ export default function AddMultipleSitesModal({ onClose, onSuccess }) {
                         ))}
                       </Select>
                     </td>
-                    <td className="py-3 px-2 text-center">
+                    <td role="cell" data-label="Actions" data-field="actions" className="py-3 px-2 text-center">
                       <button
                         onClick={() => handleDeleteSite(site.id)}
-                        className="p-1.5 text-blue-500 hover:bg-blue-50 rounded transition-colors"
+                        className="p-1.5 text-[hsl(var(--color-info))] hover:bg-[hsl(var(--color-info-soft))] rounded transition-colors"
                         title="Delete"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -303,14 +269,14 @@ export default function AddMultipleSitesModal({ onClose, onSuccess }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </ResponsiveTable>
           </div>
 
           {/* Add More Sites Button */}
           <div className="flex justify-end mt-4">
             <Button
               onClick={handleAddMoreSites}
-              className="bg-pink-600 hover:bg-pink-700 text-white"
+              className="bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))]"
             >
               <Plus className="w-4 h-4 mr-2" />
               Add More Sites
@@ -319,19 +285,19 @@ export default function AddMultipleSitesModal({ onClose, onSuccess }) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[hsl(var(--color-border))] bg-[hsl(var(--color-surface-elevated))]">
+        <div className="modal-footer flex items-center justify-end gap-3 px-6 py-4 border-t">
           <Button variant="outline" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
           <Button
             onClick={handleSave}
             disabled={submitting}
-            className="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? "Saving..." : "Save"}
           </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const config = require('../config');
 
 const auth = (req, res, next) => {
   try {
@@ -8,7 +9,7 @@ const auth = (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Authentication required' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, config.auth.jwtSecret);
     req.user = decoded;
     next();
   } catch (error) {
@@ -25,4 +26,22 @@ const authorize = (...roles) => {
   };
 };
 
-module.exports = { auth, authorize };
+/**
+ * Restrict a route to the platform master admin.
+ *
+ * MASTER sits above organisations: it manages them, and deliberately has no
+ * access to any organisation's own data through the tenant routes.
+ */
+const requireMaster = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'Authentication required' });
+  }
+
+  if (req.user.role !== 'MASTER') {
+    return res.status(403).json({ success: false, message: 'Access denied' });
+  }
+
+  return next();
+};
+
+module.exports = { auth, authorize, requireMaster };

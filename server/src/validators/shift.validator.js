@@ -55,32 +55,7 @@ const createShiftValidation = [
   body('breakDuration')
     .optional({ nullable: true })
     .isInt({ min: 0 })
-    .withMessage('Break duration must be a non-negative integer'),
-
-  body('chargedToClient')
-    .optional({ nullable: true })
-    .isBoolean()
-    .withMessage('Charged to client must be a boolean'),
-
-  body('specialShift')
-    .optional({ nullable: true })
-    .isBoolean()
-    .withMessage('Special shift must be a boolean'),
-
-  body('publishAndNotify')
-    .optional({ nullable: true })
-    .isBoolean()
-    .withMessage('Publish and notify must be a boolean'),
-
-  body('task')
-    .optional({ nullable: true, checkFalsy: true })
-    .isString()
-    .withMessage('Task must be a string'),
-
-  body('jobRefNo')
-    .optional({ nullable: true, checkFalsy: true })
-    .isString()
-    .withMessage('Job reference number must be a string')
+    .withMessage('Break duration must be a non-negative integer')
 ];
 
 // Create adhoc shift validation (same as createShiftValidation + isAdhoc)
@@ -143,32 +118,7 @@ const createAdhocShiftValidation = [
   body('breakDuration')
     .optional({ nullable: true })
     .isInt({ min: 0 })
-    .withMessage('Break duration must be a non-negative integer'),
-
-  body('chargedToClient')
-    .optional({ nullable: true })
-    .isBoolean()
-    .withMessage('Charged to client must be a boolean'),
-
-  body('specialShift')
-    .optional({ nullable: true })
-    .isBoolean()
-    .withMessage('Special shift must be a boolean'),
-
-  body('publishAndNotify')
-    .optional({ nullable: true })
-    .isBoolean()
-    .withMessage('Publish and notify must be a boolean'),
-
-  body('task')
-    .optional({ nullable: true, checkFalsy: true })
-    .isString()
-    .withMessage('Task must be a string'),
-
-  body('jobRefNo')
-    .optional({ nullable: true, checkFalsy: true })
-    .isString()
-    .withMessage('Job reference number must be a string')
+    .withMessage('Break duration must be a non-negative integer')
 ];
 
 // Update shift validation
@@ -222,27 +172,7 @@ const updateShiftValidation = [
   body('breakDuration')
     .optional({ nullable: true })
     .isInt({ min: 0 })
-    .withMessage('Break duration must be a non-negative integer'),
-
-  body('chargedToClient')
-    .optional()
-    .isBoolean()
-    .withMessage('Charged to client must be a boolean'),
-
-  body('specialShift')
-    .optional()
-    .isBoolean()
-    .withMessage('Special shift must be a boolean'),
-
-  body('task')
-    .optional({ nullable: true, checkFalsy: true })
-    .isString()
-    .withMessage('Task must be a string'),
-
-  body('jobRefNo')
-    .optional({ nullable: true, checkFalsy: true })
-    .isString()
-    .withMessage('Job reference number must be a string')
+    .withMessage('Break duration must be a non-negative integer')
 ];
 
 // Delete shift validation

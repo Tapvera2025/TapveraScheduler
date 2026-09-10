@@ -1,4 +1,5 @@
 const https = require("https");
+const config = require("../config");
 
 class WeatherService {
   /**
@@ -8,8 +9,13 @@ class WeatherService {
    * @returns {Promise<Object>} Weather forecast data
    */
   async getFiveDayForecast(latitude, longitude) {
-    const apiKey =
-      process.env.OPENWEATHER_API_KEY || "d6eddc3abec4593517ece346fbf32a33";
+    const apiKey = config.integrations.openWeatherApiKey;
+
+    if (!apiKey) {
+      const error = new Error("Weather service is not configured");
+      error.statusCode = 503;
+      throw error;
+    }
 
     return new Promise((resolve, reject) => {
       const options = {
@@ -80,9 +86,11 @@ class WeatherService {
       }
 
       forecastByDate[date].forecasts.push({
-        time: new Date(item.dt * 1000).toLocaleTimeString("en-US", {
+        // 24-hour, matching the rest of the product's Australian defaults
+        time: new Date(item.dt * 1000).toLocaleTimeString("en-AU", {
           hour: "2-digit",
           minute: "2-digit",
+          hour12: false,
         }),
         temp: item.main.temp,
         weather: item.weather[0].main,

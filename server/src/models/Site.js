@@ -69,26 +69,6 @@ const siteSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Scheduling Settings
-    remindEmployees: {
-      type: String,
-    },
-
-    defaultStartTime: {
-      type: String, // Format: "HH:mm"
-      match: [/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format'],
-    },
-
-    defaultEndTime: {
-      type: String, // Format: "HH:mm"
-      match: [/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format'],
-    },
-
-    defaultShiftDuration: {
-      type: Number, // in minutes
-      min: [0, 'Duration cannot be negative'],
-    },
-
     // Address Information
     address: {
       type: String,
@@ -110,17 +90,22 @@ const siteSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Australian timezone
+    // Supported timezones (Australia + India for now).
+    // Keep in sync with client SUPPORTED_TIMEZONES.
     timezone: {
       type: String,
       enum: [
         'Australia/Perth',
+        'Australia/Eucla',
         'Australia/Darwin',
         'Australia/Brisbane',
         'Australia/Adelaide',
         'Australia/Sydney',
         'Australia/Melbourne',
         'Australia/Hobart',
+        'Australia/Canberra',
+        'Australia/Lord_Howe',
+        'Asia/Kolkata',
       ],
       default: 'Australia/Sydney',
     },

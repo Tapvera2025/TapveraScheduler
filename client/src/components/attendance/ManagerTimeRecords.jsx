@@ -1,9 +1,14 @@
+import { MobileTableSort } from "../ui/ResponsiveTable";
 import { useState, useEffect } from 'react';
-import { Calendar, MapPin, Image as ImageIcon, Clock, ChevronLeft, ChevronRight, Filter, Loader2, Download, User } from 'lucide-react';
+import { Calendar, CalendarDays, MapPin, Image as ImageIcon, Clock, ChevronLeft, ChevronRight, Filter, Loader2, Download, User } from 'lucide-react';
 import { clockApi, schedulerApi, employeeApi } from '../../lib/api';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/Table';
+import SortableHeader from '../ui/SortableHeader';
+import { useTableSort } from '../../hooks/useTableSort';
+import { formatDate as orgDate, formatTime as orgTime } from "../../lib/format";
 
 export default function ManagerTimeRecords() {
+  const [filtersOpen, setFiltersOpen] = useState(() => window.matchMedia('(min-width: 768px)').matches);
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, pages: 0 });
@@ -11,6 +16,7 @@ export default function ManagerTimeRecords() {
   const [exporting, setExporting] = useState(false);
 
   // Filters
+  const [datePreset, setDatePreset] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [selectedSite, setSelectedSite] = useState('');
@@ -25,7 +31,33 @@ export default function ManagerTimeRecords() {
     fetchSites();
     fetchEmployees();
     fetchRecords();
-  }, [pagination.page, startDate, endDate, selectedSite, selectedEmployee]);
+  }, [pagination.page, datePreset, startDate, endDate, selectedSite, selectedEmployee]);
+
+  /**
+   * Quick ranges, kept from the screen this one replaced. A preset wins over
+   * the two date boxes, and choosing one clears them, so the filter shown is
+   * always the filter applied.
+   */
+  const presetRange = (preset) => {
+    const now = new Date();
+    const midnight = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const endOf = (d) => new Date(midnight(d).getTime() + 24 * 60 * 60 * 1000 - 1);
+
+    if (preset === 'today') return [midnight(now), endOf(now)];
+    if (preset === 'yesterday') {
+      const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      return [midnight(y), endOf(y)];
+    }
+    if (preset === 'this_week') {
+      return [new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay()), now];
+    }
+    if (preset === 'last_week') {
+      const first = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() - 7);
+      return [first, new Date(first.getTime() + 7 * 24 * 60 * 60 * 1000 - 1)];
+    }
+    if (preset === 'this_month') return [new Date(now.getFullYear(), now.getMonth(), 1), now];
+    return null;
+  };
 
   const fetchSites = async () => {
     try {
@@ -39,7 +71,9 @@ export default function ManagerTimeRecords() {
   const fetchEmployees = async () => {
     try {
       const response = await employeeApi.getAll();
-      setEmployees(response.data.data || []);
+      // /employees returns { data: { employees, pagination } }, not a bare array
+      const payload = response.data?.data;
+      setEmployees(Array.isArray(payload) ? payload : payload?.employees || []);
     } catch (err) {
       console.error('Failed to fetch employees:', err);
     }
@@ -55,8 +89,14 @@ export default function ManagerTimeRecords() {
         limit: pagination.limit,
       };
 
-      if (startDate) params.startDate = new Date(startDate).toISOString();
-      if (endDate) params.endDate = new Date(endDate).toISOString();
+      const range = presetRange(datePreset);
+      if (range) {
+        params.startDate = range[0].toISOString();
+        params.endDate = range[1].toISOString();
+      } else {
+        if (startDate) params.startDate = new Date(startDate).toISOString();
+        if (endDate) params.endDate = new Date(endDate).toISOString();
+      }
       if (selectedSite) params.siteId = selectedSite;
       if (selectedEmployee) params.employeeId = selectedEmployee;
 
@@ -77,8 +117,14 @@ export default function ManagerTimeRecords() {
       setExporting(true);
 
       const params = {};
-      if (startDate) params.startDate = new Date(startDate).toISOString();
-      if (endDate) params.endDate = new Date(endDate).toISOString();
+      const range = presetRange(datePreset);
+      if (range) {
+        params.startDate = range[0].toISOString();
+        params.endDate = range[1].toISOString();
+      } else {
+        if (startDate) params.startDate = new Date(startDate).toISOString();
+        if (endDate) params.endDate = new Date(endDate).toISOString();
+      }
       if (selectedSite) params.siteId = selectedSite;
       if (selectedEmployee) params.employeeId = selectedEmployee;
 
@@ -103,6 +149,7 @@ export default function ManagerTimeRecords() {
   };
 
   const handleClearFilters = () => {
+    setDatePreset('');
     setStartDate('');
     setEndDate('');
     setSelectedSite('');
@@ -110,24 +157,9 @@ export default function ManagerTimeRecords() {
     setPagination({ ...pagination, page: 1 });
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  };
+  const formatDate = (dateString) => orgDate(dateString, 'N/A');
 
-  const formatTime = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
+  const formatTime = (dateString) => orgTime(dateString, 'N/A');
 
   const formatDuration = (hours) => {
     if (!hours) return 'N/A';
@@ -136,121 +168,147 @@ export default function ManagerTimeRecords() {
     return `${h}h ${m}m`;
   };
 
+  const { sortedData: sortedRecords, sortConfig, requestSort, getSortIndicator } = useTableSort(records, {
+    defaultColumn: 'clockInTime',
+    defaultDirection: 'desc',
+  });
+
+  const SORTABLE = [
+    ['Employee', 'employeeId.firstName'],
+    ['Date', 'clockInTime'],
+    ['Site', 'siteId.siteLocationName'],
+    ['Clock In', 'clockInTime'],
+    ['Clock Out', 'clockOutTime'],
+    ['Total Hours', 'totalHours'],
+    ['Status', 'status'],
+  ];
+
   // Calculate summary statistics
   const totalHours = records.reduce((sum, record) => sum + (record.totalHours || 0), 0);
+  const clockedInCount = records.filter((record) => record.status === 'CLOCKED_IN').length;
+  const activeFilterCount = [datePreset, startDate, endDate, selectedSite, selectedEmployee].filter(Boolean).length;
 
   return (
-    <div className="min-h-screen bg-gray-50 py-6 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
+    <div className="attendance-page">
+      <div className="attendance-page-shell">
+        <header className="attendance-heading">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Employee Time Records</h1>
-            <p className="text-gray-600 mt-1">View and export all employee clock records</p>
+            <p className="eyebrow">TEAM TIMEKEEPING</p>
+            <h1>Time &amp; attendance<span>.</span></h1>
+            <p>Review hours, activity, and clocking evidence across your team.</p>
           </div>
+          <div className="attendance-heading-actions">
+            <span className="date-chip"><CalendarDays size={15} />{orgDate(new Date())}</span>
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              disabled={exporting || records.length === 0}
+              className="solid-link"
+            >
+              {exporting ? <><Loader2 size={16} className="animate-spin" />Exporting...</> : <><Download size={16} />Export CSV</>}
+            </button>
+          </div>
+        </header>
 
-          {/* Export Button */}
-          <button
-            onClick={handleExportCSV}
-            disabled={exporting || records.length === 0}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {exporting ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Exporting...
-              </>
-            ) : (
-              <>
-                <Download className="w-5 h-5" />
-                Export CSV
-              </>
-            )}
-          </button>
+        <section className="attendance-dashboard-stats" aria-label="Attendance summary">
+          <article className="stat-card stat-primary">
+            <div className="stat-card-top"><span>Total records</span><Clock size={18} strokeWidth={1.5} /></div>
+            <div className="stat-value">{String(pagination.total).padStart(2, '0')}</div>
+            <div className="stat-card-bottom"><span>Matching your current view</span></div>
+          </article>
+          <article className="stat-card stat-success">
+            <div className="stat-card-top"><span>On the clock</span><User size={18} strokeWidth={1.5} /></div>
+            <div className="stat-value">{String(clockedInCount).padStart(2, '0')}</div>
+            <div className="stat-card-bottom"><span>Active on this page</span></div>
+          </article>
+          <article className="stat-card stat-info">
+            <div className="stat-card-top"><span>Hours logged</span><Calendar size={18} strokeWidth={1.5} /></div>
+            <div className="stat-value">{totalHours.toFixed(1)}<small>h</small></div>
+            <div className="stat-card-bottom"><span>Across this page of records</span></div>
+          </article>
+        </section>
+
+        <div className="attendance-status-strip">
+          <span className="status-strip-label">CURRENT VIEW</span>
+          <span><i className="status-dot success" />{clockedInCount} clocked in</span>
+          <span><i className="status-dot info" />{records.length} records on this page</span>
+          {activeFilterCount > 0 && <span><i className="status-dot primary" />{activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} applied</span>}
         </div>
 
-        {/* Summary Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <Clock className="w-6 h-6 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Total Records</p>
-                <p className="text-2xl font-bold text-gray-900">{pagination.total}</p>
-              </div>
+        <details className="attendance-filter-panel" open={filtersOpen} onToggle={event => setFiltersOpen(event.currentTarget.open)}>
+          <summary>
+            <span className="attendance-filter-summary">
+              <span className="attendance-filter-symbol"><Filter size={17} strokeWidth={1.7} /></span>
+              <span><strong>Refine records</strong><small>Set a date range, site, or employee.</small></span>
+            </span>
+            <span className="attendance-filter-state">{activeFilterCount ? `${activeFilterCount} active` : 'All records'}</span>
+          </summary>
+
+          <div className="attendance-filter-fields">
+            {/* Quick range */}
+            <div className="attendance-filter-field">
+              <label>
+                Quick range
+              </label>
+              <select
+                value={datePreset}
+                onChange={(e) => {
+                  setDatePreset(e.target.value);
+                  // A preset replaces the explicit dates rather than fighting them.
+                  if (e.target.value) {
+                    setStartDate('');
+                    setEndDate('');
+                  }
+                  setPagination({ ...pagination, page: 1 });
+                }}
+                className="attendance-filter-control"
+              >
+                <option value="">Custom dates</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="this_week">This week</option>
+                <option value="last_week">Last week</option>
+                <option value="this_month">This month</option>
+              </select>
             </div>
-          </div>
 
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-green-100 rounded-lg">
-                <User className="w-6 h-6 text-green-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Current Page</p>
-                <p className="text-2xl font-bold text-gray-900">{records.length}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-purple-100 rounded-lg">
-                <Clock className="w-6 h-6 text-purple-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Total Hours (Page)</p>
-                <p className="text-2xl font-bold text-gray-900">{totalHours.toFixed(1)}h</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Filter className="w-5 h-5 text-gray-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Start Date */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+            <div className="attendance-filter-field">
+              <label>
                 Start Date
               </label>
               <input
                 type="date"
                 value={startDate}
+                disabled={Boolean(datePreset)}
                 onChange={(e) => {
                   setStartDate(e.target.value);
                   setPagination({ ...pagination, page: 1 });
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="attendance-filter-control"
               />
             </div>
 
             {/* End Date */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+            <div className="attendance-filter-field">
+              <label>
                 End Date
               </label>
               <input
                 type="date"
                 value={endDate}
+                disabled={Boolean(datePreset)}
                 onChange={(e) => {
                   setEndDate(e.target.value);
                   setPagination({ ...pagination, page: 1 });
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="attendance-filter-control"
               />
             </div>
 
             {/* Site Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+            <div className="attendance-filter-field">
+              <label>
                 Site
               </label>
               <select
@@ -259,7 +317,7 @@ export default function ManagerTimeRecords() {
                   setSelectedSite(e.target.value);
                   setPagination({ ...pagination, page: 1 });
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="attendance-filter-control"
               >
                 <option value="">All Sites</option>
                 {sites.map((site) => (
@@ -271,8 +329,8 @@ export default function ManagerTimeRecords() {
             </div>
 
             {/* Employee Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+            <div className="attendance-filter-field">
+              <label>
                 Employee
               </label>
               <select
@@ -281,7 +339,7 @@ export default function ManagerTimeRecords() {
                   setSelectedEmployee(e.target.value);
                   setPagination({ ...pagination, page: 1 });
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="attendance-filter-control"
               >
                 <option value="">All Employees</option>
                 {employees.map((emp) => (
@@ -293,56 +351,65 @@ export default function ManagerTimeRecords() {
             </div>
           </div>
 
-          {/* Clear Filters Button */}
-          {(startDate || endDate || selectedSite || selectedEmployee) && (
-            <div className="mt-4">
+          {(datePreset || startDate || endDate || selectedSite || selectedEmployee) && (
+            <div className="attendance-filter-actions">
               <button
+                type="button"
                 onClick={handleClearFilters}
-                className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                className="attendance-clear-filters"
               >
-                Clear All Filters
+                Clear filters
               </button>
             </div>
           )}
-        </div>
+        </details>
 
-        {/* Error State */}
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-            <p className="text-sm text-red-800">{error}</p>
+          <div className="attendance-feedback attendance-feedback-error" role="alert">
+            <p>{error}</p>
           </div>
         )}
 
-        {/* Loading State */}
         {loading && (
-          <div className="flex justify-center items-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <div className="attendance-loading" aria-live="polite">
+            <Loader2 size={22} className="animate-spin" />
+            <span>Loading time records…</span>
           </div>
         )}
 
-        {/* Table */}
         {!loading && records.length > 0 && (
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-            <Table>
+          <section className="attendance-records-card" aria-label="Team attendance records">
+            <div className="attendance-records-heading">
+              <div>
+                <div className="panel-title-line"><h2>Clock records</h2><span className="subtle-pill">{pagination.total} total</span></div>
+                <p>Each recorded shift, including clocking evidence.</p>
+              </div>
+              <span className="attendance-records-meta">Page {pagination.page} of {pagination.pages || 1}</span>
+            </div>
+            <MobileTableSort columns={SORTABLE.map(([label,key]) => [key,label])} sortConfig={sortConfig} onSort={requestSort} />
+            <Table aria-label="Team attendance">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Employee</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Site</TableHead>
-                  <TableHead>Clock In</TableHead>
-                  <TableHead>Clock Out</TableHead>
-                  <TableHead>Total Hours</TableHead>
-                  <TableHead>Status</TableHead>
+                    {SORTABLE.map(([label, key]) => (
+                    <TableHead key={label}>
+                      <SortableHeader
+                        label={label}
+                        sortKey={key}
+                        onSort={requestSort}
+                        sortDirection={getSortIndicator(key)}
+                      />
+                    </TableHead>
+                  ))}
                   <TableHead>Photos</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {records.map((record) => (
+                {sortedRecords.map((record) => (
                   <TableRow key={record._id}>
                     {/* Employee */}
-                    <TableCell>
+                    <TableCell data-label="Employee" data-field="title">
                       <div className="flex items-center gap-2">
-                        <User className="w-4 h-4 text-gray-400" />
+                        <User className="w-4 h-4 text-[hsl(var(--color-foreground-muted))]" />
                         <span className="font-medium">
                           {record.employeeId?.firstName} {record.employeeId?.lastName}
                         </span>
@@ -350,55 +417,55 @@ export default function ManagerTimeRecords() {
                     </TableCell>
 
                     {/* Date */}
-                    <TableCell>
+                    <TableCell data-label="Date">
                       <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-gray-400" />
+                        <Calendar className="w-4 h-4 text-[hsl(var(--color-foreground-muted))]" />
                         <span>{formatDate(record.clockInTime)}</span>
                       </div>
                     </TableCell>
 
                     {/* Site */}
-                    <TableCell>
+                    <TableCell data-label="Site" data-field="wide">
                       <div className="flex items-center gap-2">
-                        <MapPin className="w-4 h-4 text-gray-400" />
+                        <MapPin className="w-4 h-4 text-[hsl(var(--color-foreground-muted))]" />
                         <span>{record.siteId?.siteLocationName || 'N/A'}</span>
                       </div>
                     </TableCell>
 
                     {/* Clock In */}
-                    <TableCell>
+                    <TableCell data-label="Clock in">
                       <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-green-500" />
+                        <Clock className="w-4 h-4 text-[hsl(var(--color-success))]" />
                         <span>{formatTime(record.clockInTime)}</span>
                       </div>
                     </TableCell>
 
                     {/* Clock Out */}
-                    <TableCell>
+                    <TableCell data-label="Clock out">
                       {record.clockOutTime ? (
                         <div className="flex items-center gap-2">
-                          <Clock className="w-4 h-4 text-red-500" />
+                          <Clock className="w-4 h-4 text-[hsl(var(--color-error))]" />
                           <span>{formatTime(record.clockOutTime)}</span>
                         </div>
                       ) : (
-                        <span className="text-gray-400">-</span>
+                        <span className="text-[hsl(var(--color-foreground-muted))]">-</span>
                       )}
                     </TableCell>
 
                     {/* Total Hours */}
-                    <TableCell>
-                      <span className="font-semibold text-blue-600">
+                    <TableCell data-label="Total hours">
+                      <span className="font-semibold text-[hsl(var(--color-info))]">
                         {formatDuration(record.totalHours)}
                       </span>
                     </TableCell>
 
                     {/* Status */}
-                    <TableCell>
+                    <TableCell data-label="Status" data-field="status">
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium ${
                           record.status === 'CLOCKED_IN'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-gray-100 text-gray-800'
+                            ? 'bg-[hsl(var(--color-success-soft))] text-[hsl(var(--color-success))]'
+                            : 'bg-[hsl(var(--color-surface-elevated))] text-[hsl(var(--color-foreground))]'
                         }`}
                       >
                         {record.status === 'CLOCKED_IN' ? 'Active' : 'Completed'}
@@ -406,28 +473,28 @@ export default function ManagerTimeRecords() {
                     </TableCell>
 
                     {/* Photos */}
-                    <TableCell>
+                    <TableCell data-label="Photos" data-field="actions">
                       <div className="flex items-center gap-2">
                         {record.clockInPhotoUrl && (
                           <button
                             onClick={() => setSelectedPhoto(record.clockInPhotoUrl)}
-                            className="p-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded"
+                            className="p-1 text-[hsl(var(--color-info))] hover:text-[hsl(var(--color-info))] hover:bg-[hsl(var(--color-info-soft))] rounded"
                             title="View Clock In Photo"
                           >
-                            <ImageIcon className="w-4 h-4" />
+                            <ImageIcon className="w-4 h-4" /><span className="mobile-action-label">Clock in photo</span>
                           </button>
                         )}
                         {record.clockOutPhotoUrl && (
                           <button
                             onClick={() => setSelectedPhoto(record.clockOutPhotoUrl)}
-                            className="p-1 text-red-600 hover:text-red-700 hover:bg-red-50 rounded"
+                            className="p-1 text-[hsl(var(--color-error))] hover:text-[hsl(var(--color-error))] hover:bg-[hsl(var(--color-error-soft))] rounded"
                             title="View Clock Out Photo"
                           >
-                            <ImageIcon className="w-4 h-4" />
+                            <ImageIcon className="w-4 h-4" /><span className="mobile-action-label">Clock out photo</span>
                           </button>
                         )}
                         {!record.clockInPhotoUrl && !record.clockOutPhotoUrl && (
-                          <span className="text-gray-400 text-sm">-</span>
+                          <span className="text-[hsl(var(--color-foreground-muted))] text-sm">-</span>
                         )}
                       </div>
                     </TableCell>
@@ -436,46 +503,48 @@ export default function ManagerTimeRecords() {
               </TableBody>
             </Table>
 
-            {/* Pagination */}
-            <div className="border-t border-gray-200 px-6 py-4 flex items-center justify-between">
-              <div className="text-sm text-gray-600">
+            <div className="data-pagination attendance-records-pagination">
+              <div>
                 Showing {records.length} of {pagination.total} records
               </div>
 
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => setPagination({ ...pagination, page: pagination.page - 1 })}
                   disabled={pagination.page === 1}
-                  className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="attendance-pagination-button"
+                  aria-label="Previous page"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
 
-                <span className="text-sm text-gray-600">
+                <span className="attendance-page-number">
                   Page {pagination.page} of {pagination.pages}
                 </span>
 
                 <button
+                  type="button"
                   onClick={() => setPagination({ ...pagination, page: pagination.page + 1 })}
                   disabled={pagination.page >= pagination.pages}
-                  className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="attendance-pagination-button"
+                  aria-label="Next page"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
-          </div>
+          </section>
         )}
 
-        {/* Empty State */}
         {!loading && records.length === 0 && (
-          <div className="bg-white rounded-lg shadow-sm p-12 text-center">
-            <Clock className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No Time Records Found</h3>
-            <p className="text-gray-600">
-              {startDate || endDate || selectedSite || selectedEmployee
-                ? 'Try adjusting your filters'
-                : 'No clock records available'}
+          <div className="attendance-empty-state">
+            <span className="attendance-empty-symbol"><Clock size={27} strokeWidth={1.5} /></span>
+            <h2>No time records found</h2>
+            <p>
+              {datePreset || startDate || endDate || selectedSite || selectedEmployee
+                ? 'Try adjusting your filters to widen this view.'
+                : 'Clock records will appear here as your team checks in and out.'}
             </p>
           </div>
         )}
@@ -483,7 +552,7 @@ export default function ManagerTimeRecords() {
         {/* Photo Viewer Modal */}
         {selectedPhoto && (
           <div
-            className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4"
             onClick={() => setSelectedPhoto(null)}
           >
             <div className="relative max-w-4xl max-h-full">
@@ -495,7 +564,7 @@ export default function ManagerTimeRecords() {
               />
               <button
                 onClick={() => setSelectedPhoto(null)}
-                className="absolute top-4 right-4 px-4 py-2 bg-white text-gray-900 rounded-lg font-medium hover:bg-gray-100 transition-colors"
+                className="absolute top-4 right-4 px-4 py-2 bg-[hsl(var(--color-card))] text-[hsl(var(--color-foreground))] rounded-lg font-medium hover:bg-[hsl(var(--color-surface-elevated))] transition-colors"
               >
                 Close
               </button>

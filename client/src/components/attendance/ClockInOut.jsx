@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { MapPin, Camera, Clock, CheckCircle, XCircle, Loader2, AlertCircle, Navigation, Calendar } from 'lucide-react';
 import { clockApi, shiftApi } from '../../lib/api';
+import { useModuleStore } from "../../store/moduleStore";
+import { MODULES } from "../../constants/modules";
+import { formatDate as orgDate, formatTime as orgTime, formatDateTime as orgDateTime } from "../../lib/format";
+import ShiftAccessCodes from "./ShiftAccessCodes";
 
 export default function ClockInOut() {
   const [loading, setLoading] = useState(false);
@@ -25,6 +29,9 @@ export default function ClockInOut() {
 
   const [elapsedTime, setElapsedTime] = useState('');
   const [employeeId, setEmployeeId] = useState(null);
+  // Bumped after clock-in/out so the child <ShiftAccessCodes> re-fetches
+  // and any afterClockingIn-gated codes reveal.
+  const [codesRefreshKey, setCodesRefreshKey] = useState(0);
 
   useEffect(() => {
     const init = async () => {
@@ -73,9 +80,21 @@ export default function ClockInOut() {
     }
   };
 
+  // Shifts only exist when the scheduler module is switched on. Clocking in
+  // works without one, so the shift lookups are skipped rather than failing.
+  const schedulerEnabled = useModuleStore((state) => state.hasModule)(
+    MODULES.SCHEDULER
+  );
+
   const fetchTodayShifts = async () => {
     try {
       setShiftsLoading(true);
+
+      if (!schedulerEnabled) {
+        setTodayShifts([]);
+        return;
+      }
+
       const today = new Date().toISOString().split('T')[0];
       const response = await shiftApi.getMyShifts(today, today);
       const shifts = response.data.data || [];
@@ -83,8 +102,13 @@ export default function ClockInOut() {
       setTodayShifts(scheduledShifts);
       if (scheduledShifts.length === 1) setSelectedShift(scheduledShifts[0]);
     } catch (err) {
-      console.error('Failed to fetch shifts:', err);
-      setError('Failed to load your shifts for today');
+      // 403 means the scheduler module is off — not something to alarm the user about
+      if (err.response?.status === 403) {
+        setTodayShifts([]);
+      } else {
+        console.error('Failed to fetch shifts:', err);
+        setError('Failed to load your shifts for today');
+      }
     } finally {
       setShiftsLoading(false);
     }
@@ -92,6 +116,11 @@ export default function ClockInOut() {
 
   const fetchUpcomingShifts = async () => {
     try {
+      if (!schedulerEnabled) {
+        setUpcomingShifts([]);
+        return;
+      }
+
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       const nextWeek = new Date();
@@ -166,6 +195,7 @@ export default function ClockInOut() {
       setSuccess('Clocked in successfully!');
       setClockStatus(response.data.data);
       setPhoto(null); setPhotoPreview(null);
+      setCodesRefreshKey((n) => n + 1);
       setTimeout(() => { fetchCurrentStatus(); fetchTodayShifts(); fetchUpcomingShifts(); }, 1000);
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Failed to clock in');
@@ -181,25 +211,16 @@ export default function ClockInOut() {
       setSuccess(`Clocked out successfully! Total time: ${response.data.data.totalHours} hours`);
       setClockStatus(null);
       setPhoto(null); setPhotoPreview(null);
+      setCodesRefreshKey((n) => n + 1);
       setTimeout(() => { fetchCurrentStatus(); fetchTodayShifts(); fetchUpcomingShifts(); }, 1000);
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Failed to clock out');
     } finally { setLoading(false); }
   };
 
-  const formatShiftTime = (dateString) => {
-    if (!dateString) return '';
-    return new Date(dateString).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-  };
+  const formatShiftTime = (dateString) => orgTime(dateString, '');
 
-  const formatShiftDate = (dateString) => {
-    if (!dateString) return '';
-    return new Date(dateString).toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric'
-    });
-  };
+  const formatShiftDate = (dateString) => orgDate(dateString, '');
 
   const calculateShiftDuration = (startTime, endTime) => {
     if (!startTime || !endTime) return '';
@@ -221,7 +242,7 @@ export default function ClockInOut() {
   const hasShiftsToday = todayShifts.length > 0;
 
   return (
-    <div className="min-h-screen bg-[hsl(var(--color-background))] py-4 px-4 sm:px-6 lg:px-8">
+    <div className="operational-page">
       <div className="max-w-2xl mx-auto">
 
         {/* Header */}
@@ -232,14 +253,14 @@ export default function ClockInOut() {
 
         {/* Currently Clocked In */}
         {isClockedIn && (
-          <div className="border border-green-500/30 bg-green-500/10 rounded-lg p-6 mb-6">
+          <div className="border border-[hsl(var(--color-success))]/30 bg-[hsl(var(--color-success))]/10 rounded-lg p-6 mb-6">
             <div className="flex items-start gap-3">
-              <CheckCircle className="w-6 h-6 text-green-500 mt-0.5 flex-shrink-0" />
+              <CheckCircle className="w-6 h-6 text-[hsl(var(--color-success))] mt-0.5 flex-shrink-0" />
               <div className="flex-1">
                 <h2 className="text-lg font-semibold text-[hsl(var(--color-foreground))] mb-2">Currently Clocked In</h2>
                 <div className="space-y-1 text-sm text-[hsl(var(--color-foreground-secondary))]">
                   <p><span className="font-medium text-[hsl(var(--color-foreground))]">Site:</span> {clockStatus.siteId?.siteLocationName || 'N/A'}</p>
-                  <p><span className="font-medium text-[hsl(var(--color-foreground))]">Clock In Time:</span> {new Date(clockStatus.clockInTime).toLocaleString()}</p>
+                  <p><span className="font-medium text-[hsl(var(--color-foreground))]">Clock In Time:</span> {orgDateTime(clockStatus.clockInTime)}</p>
                   <p><span className="font-medium text-[hsl(var(--color-foreground))]">Elapsed Time:</span> {elapsedTime}</p>
                 </div>
               </div>
@@ -264,16 +285,16 @@ export default function ClockInOut() {
 
         {/* Error alert */}
         {error && (
-          <div className="border border-red-500/30 bg-red-500/10 rounded-lg p-4 mb-6 flex items-start gap-3">
-            <XCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+          <div className="border border-[hsl(var(--color-error))]/30 bg-[hsl(var(--color-error))]/10 rounded-lg p-4 mb-6 flex items-start gap-3">
+            <XCircle className="w-5 h-5 text-[hsl(var(--color-error))] mt-0.5 flex-shrink-0" />
             <p className="text-sm text-[hsl(var(--color-foreground))]">{error}</p>
           </div>
         )}
 
         {/* Success alert */}
         {success && (
-          <div className="border border-green-500/30 bg-green-500/10 rounded-lg p-4 mb-6 flex items-start gap-3">
-            <CheckCircle className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+          <div className="border border-[hsl(var(--color-success))]/30 bg-[hsl(var(--color-success))]/10 rounded-lg p-4 mb-6 flex items-start gap-3">
+            <CheckCircle className="w-5 h-5 text-[hsl(var(--color-success))] mt-0.5 flex-shrink-0" />
             <p className="text-sm text-[hsl(var(--color-foreground))]">{success}</p>
           </div>
         )}
@@ -286,7 +307,7 @@ export default function ClockInOut() {
             {!isClockedIn && todayShifts.length > 1 && (
               <div>
                 <label className="block text-sm font-medium text-[hsl(var(--color-foreground))] mb-2">
-                  Select Your Shift <span className="text-red-500">*</span>
+                  Select Your Shift <span className="text-[hsl(var(--color-error))]">*</span>
                 </label>
                 <div className="space-y-2">
                   {todayShifts.map((shift) => (
@@ -344,17 +365,33 @@ export default function ClockInOut() {
               </div>
             )}
 
+            {/* Site access codes for the active shift. When clocked in the
+                relevant shift is clockStatus.shiftId; otherwise it's the one
+                the user has selected/is about to clock into. */}
+            {(isClockedIn
+              ? clockStatus?.shiftId?._id || clockStatus?.shiftId?.id || clockStatus?.shiftId
+              : selectedShift?.id) && (
+              <ShiftAccessCodes
+                shiftId={
+                  isClockedIn
+                    ? clockStatus?.shiftId?._id || clockStatus?.shiftId?.id || clockStatus?.shiftId
+                    : selectedShift.id
+                }
+                refreshKey={codesRefreshKey}
+              />
+            )}
+
             {/* Location */}
             <div>
               <label className="block text-sm font-medium text-[hsl(var(--color-foreground))] mb-2">
-                Location <span className="text-red-500">*</span>
+                Location <span className="text-[hsl(var(--color-error))]">*</span>
               </label>
 
               {!location && (
                 <button
                   onClick={getCurrentLocation}
                   disabled={locationLoading}
-                  className="w-full sm:w-auto px-6 py-3 bg-[hsl(var(--color-primary))] text-white rounded-lg font-medium hover:bg-[hsl(var(--color-primary-hover))] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full sm:w-auto px-6 py-3 bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] rounded-lg font-medium hover:bg-[hsl(var(--color-primary-hover))] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {locationLoading ? (
                     <><Loader2 className="w-5 h-5 animate-spin" />Getting Location...</>
@@ -367,7 +404,7 @@ export default function ClockInOut() {
               {location && (
                 <div className="bg-[hsl(var(--color-surface-elevated))] border border-[hsl(var(--color-border))] rounded-lg p-4">
                   <div className="flex items-start gap-3">
-                    <MapPin className="w-5 h-5 text-green-500 mt-0.5" />
+                    <MapPin className="w-5 h-5 text-[hsl(var(--color-success))] mt-0.5" />
                     <div className="flex-1">
                       <p className="text-sm font-medium text-[hsl(var(--color-foreground))] mb-1">Location Acquired</p>
                       <p className="text-xs text-[hsl(var(--color-foreground-secondary))]">
@@ -388,7 +425,7 @@ export default function ClockInOut() {
               )}
 
               {locationError && (
-                <div className="mt-2 text-sm text-red-500 flex items-center gap-2">
+                <div className="mt-2 text-sm text-[hsl(var(--color-error))] flex items-center gap-2">
                   <AlertCircle className="w-4 h-4" />
                   {locationError}
                 </div>
@@ -427,7 +464,7 @@ export default function ClockInOut() {
                     <img src={photoPreview} alt="Preview" className="w-full max-w-xs rounded-lg border border-[hsl(var(--color-border))]" />
                     <button
                       onClick={() => { setPhoto(null); setPhotoPreview(null); }}
-                      className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                      className="absolute top-2 right-2 p-2 bg-[hsl(var(--color-error))] text-[hsl(var(--color-error-foreground))] rounded-full hover:bg-[hsl(var(--color-error))] transition-colors"
                     >
                       <XCircle className="w-4 h-4" />
                     </button>
@@ -448,7 +485,7 @@ export default function ClockInOut() {
                 <button
                   onClick={handleClockIn}
                   disabled={loading || !location || !selectedShift || !hasShiftsToday}
-                  className="w-full py-4 bg-green-600 text-white rounded-lg font-semibold text-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+                  className="w-full py-4 bg-[hsl(var(--color-success))] text-[hsl(var(--color-success-foreground))] rounded-lg font-semibold text-lg hover:bg-[hsl(var(--color-success))] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
                 >
                   {loading ? (
                     <><Loader2 className="w-6 h-6 animate-spin" />Clocking In...</>
@@ -460,7 +497,7 @@ export default function ClockInOut() {
                 <button
                   onClick={handleClockOut}
                   disabled={loading || !location}
-                  className="w-full py-4 bg-red-600 text-white rounded-lg font-semibold text-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+                  className="w-full py-4 bg-[hsl(var(--color-error))] text-[hsl(var(--color-error-foreground))] rounded-lg font-semibold text-lg hover:bg-[hsl(var(--color-error))] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
                 >
                   {loading ? (
                     <><Loader2 className="w-6 h-6 animate-spin" />Clocking Out...</>
@@ -545,7 +582,7 @@ export default function ClockInOut() {
                     </div>
 
                     <div className="flex-shrink-0">
-                      <span className="inline-block px-3 py-1 bg-blue-50 text-blue-700 text-xs rounded-full border border-blue-200 font-medium">
+                      <span className="inline-block px-3 py-1 bg-[hsl(var(--color-info-soft))] text-[hsl(var(--color-info))] text-xs rounded-full border border-[hsl(var(--color-border))] font-medium">
                         Scheduled
                       </span>
                     </div>

@@ -1,4 +1,4 @@
-import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { X } from "lucide-react";
 import { Select } from "../ui/Select";
 import { Button } from "../ui/Button";
 
@@ -38,26 +38,17 @@ export default function LeaveFilters({ filters, setFilters, onClose }) {
         <label className="text-sm font-medium text-[hsl(var(--color-foreground))]">
           Select Leave Period
         </label>
-        <div className="flex items-center gap-2">
-          <button className="p-1 hover:bg-[hsl(var(--color-card))] rounded">
-            <ChevronLeft className="w-4 h-4 text-[hsl(var(--color-foreground))]" />
-          </button>
-          <Select
-            value={filters.leavePeriod}
-            onChange={(e) => setFilters({ ...filters, leavePeriod: e.target.value })}
-            className="flex-1"
-          >
-            <option value="all">All Time</option>
-            <option value="current_prev_month">Current & Prev Month</option>
-            <option value="current_month">Current Month</option>
-            <option value="last_3_months">Last 3 Months</option>
-            <option value="last_6_months">Last 6 Months</option>
-            <option value="this_year">This Year</option>
-          </Select>
-          <button className="p-1 hover:bg-[hsl(var(--color-card))] rounded">
-            <ChevronRight className="w-4 h-4 text-[hsl(var(--color-foreground))]" />
-          </button>
-        </div>
+        <Select
+          value={filters.leavePeriod}
+          onChange={(e) => setFilters({ ...filters, leavePeriod: e.target.value })}
+        >
+          <option value="all">All Time</option>
+          <option value="current_prev_month">Current & Prev Month</option>
+          <option value="current_month">Current Month</option>
+          <option value="last_3_months">Last 3 Months</option>
+          <option value="last_6_months">Last 6 Months</option>
+          <option value="this_year">This Year</option>
+        </Select>
       </div>
 
       {/* Leave Category */}
@@ -96,7 +87,7 @@ export default function LeaveFilters({ filters, setFilters, onClose }) {
 
       {onClose && (
         <Button
-          className="w-full bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary-dark))] text-white"
+          className="w-full bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary-dark))] text-[hsl(var(--color-primary-foreground))]"
           onClick={onClose}
         >
           Apply & Close

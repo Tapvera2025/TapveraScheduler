@@ -1,5 +1,9 @@
+import PageHeader from "../components/layout/PageHeader";
+import Pagination from "../components/ui/Pagination";
+import { Switch } from "../components/ui/Switch";
+import ResponsiveTable, { MobileTableSort } from "../components/ui/ResponsiveTable";
 import { useState, useEffect, useRef } from "react";
-import { Users, Plus, Link2, ChevronDown, Settings, Maximize, Minimize, RotateCw, Trash2, Edit } from "lucide-react";
+import { Plus, Maximize, Minimize, RotateCw, Trash2, Edit, Search , Users } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Select } from "../components/ui/Select";
@@ -31,7 +35,7 @@ export default function Employees() {
   const [editingEmployee, setEditingEmployee] = useState(null);
 
   // Table sorting
-  const { sortedData: sortedEmployees, requestSort, getSortIndicator } = useTableSort(employees, {
+  const { sortedData: sortedEmployees, sortConfig, requestSort, getSortIndicator } = useTableSort(employees, {
     defaultColumn: 'firstName',
     defaultDirection: 'asc',
   });
@@ -49,7 +53,8 @@ export default function Employees() {
       setEmployees(response.data.data.employees);
       setPagination(prev => ({
         ...prev,
-        ...response.data.data.pagination
+        ...response.data.data.pagination,
+        totalPages: response.data.data.pagination.totalPages ?? response.data.data.pagination.pages ?? 1
       }));
     } catch (err) {
       toast.error('Failed to load employees');
@@ -60,7 +65,7 @@ export default function Employees() {
 
   useEffect(() => {
     fetchEmployees();
-  }, [search, showInactive, pagination.page]);
+  }, [search, showInactive, pagination.page, pagination.limit]);
 
   const handleAddNew = () => {
     setEditingEmployee(null);
@@ -86,9 +91,9 @@ export default function Employees() {
 
   const handleSaveEmployee = async (employeeData, selectedSiteIds = []) => {
     try {
-      let response;
+
       if (editingEmployee) {
-        response = await employeeApi.update(editingEmployee.id, employeeData);
+        await employeeApi.update(editingEmployee.id, employeeData);
         toast.success('Employee updated successfully');
 
         // Assign sites if provided
@@ -97,7 +102,7 @@ export default function Employees() {
           toast.success('Sites assigned successfully');
         }
       } else {
-        response = await employeeApi.create(employeeData);
+        const response = await employeeApi.create(employeeData);
         const createdEmployee = response.data.data;
         toast.success('Employee created successfully');
 
@@ -132,314 +137,50 @@ export default function Employees() {
   };
 
   return (
-    <div ref={pageRef} className="min-h-screen">
-      {/* Employees Header */}
-      <div className="bg-[hsl(var(--color-primary))] text-white px-4 sm:px-6 lg:px-8 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Users className="w-5 h-5" />
-            <h1 className="text-base sm:text-lg font-semibold">Employees</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <button className="p-2 hover:bg-[hsl(var(--color-primary-dark))] rounded-lg transition-colors" title="Settings">
-              <Settings className="w-5 h-5" />
-            </button>
-            {isSupported && (
-              <button
-                onClick={toggleFullscreen}
-                className="p-2 hover:bg-[hsl(var(--color-primary-dark))] rounded-lg transition-colors"
-                title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-              >
-                {isFullscreen ? (
-                  <Minimize className="w-5 h-5" />
-                ) : (
-                  <Maximize className="w-5 h-5" />
-                )}
-              </button>
-            )}
-            <button
-              onClick={fetchEmployees}
-              className="p-2 hover:bg-[hsl(var(--color-primary-dark))] rounded-lg transition-colors"
-              title="Refresh"
-            >
-              <RotateCw className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="p-4 sm:p-6">
-        {/* Filters and Actions */}
-        <div className="bg-[hsl(var(--color-card))] rounded-lg shadow-sm border border-[hsl(var(--color-border))] mb-4">
-          <div className="p-4 flex flex-wrap items-center justify-between gap-4">
-            {/* Search and Filters */}
-            <div className="flex flex-wrap items-center gap-3">
-              <Select value="name" className="w-32">
-                <option value="name">Name</option>
-                <option value="email">Email</option>
-                <option value="phone">Phone</option>
-              </Select>
-
-              <Input
-                type="text"
-                placeholder="Search employees..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-64"
-              />
-
-              <label className="flex items-center gap-2 cursor-pointer">
-                <span className="text-sm text-[hsl(var(--color-foreground))]">Display Inactive Employees</span>
-                <div
-                  onClick={() => setShowInactive(!showInactive)}
-                  className={`relative inline-block w-12 h-6 rounded-full transition-colors ${
-                    showInactive ? 'bg-[hsl(var(--color-error))]' : 'bg-[hsl(var(--color-border))]'
-                  }`}
-                >
-                  <div
-                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
-                      showInactive ? 'translate-x-6' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-                <span className={`text-sm font-medium ${showInactive ? 'text-[hsl(var(--color-error))]' : 'text-[hsl(var(--color-foreground-secondary))]'}`}>{showInactive ? 'ON' : 'OFF'}</span>
-              </label>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2">
-              <Button
-                variant="primary"
-                onClick={handleAddNew}
-                className="flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                Add New
-              </Button>
-
-              <Button variant="outline" className="flex items-center gap-2">
-                <Link2 className="w-4 h-4" />
-                Get App Link
-              </Button>
-
-              <Button variant="outline" className="flex items-center gap-2">
-                Actions
-                <ChevronDown className="w-4 h-4" />
-              </Button>
-
-              <Button variant="outline" className="flex items-center gap-2">
-                Columns
-                <ChevronDown className="w-4 h-4" />
-              </Button>
-
-              <Select value={pagination.limit} className="w-20">
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </Select>
+    <div ref={pageRef} className="data-page">
+      <PageHeader icon={Users} title="Employees" eyebrow="YOUR TEAM" description="The people behind every well-planned day." actions={<>
+        <button className="icon-button" onClick={fetchEmployees} aria-label="Refresh employees"><RotateCw size={17} /></button>
+        {isSupported && <button className="icon-button" onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>{isFullscreen ? <Minimize size={17} /> : <Maximize size={17} />}</button>}
+        <Button onClick={handleAddNew}><Plus size={16} />Add employee</Button>
+      </>} />
+      <div className="data-page-body">
+        <div className="data-toolbar mb-5">
+          <div className="data-toolbar-content">
+            <div className="directory-search"><Search size={17} /><Input aria-label="Search employees" placeholder="Search name, email or phone…" value={search} onChange={(e) => { setSearch(e.target.value); setPagination(prev => ({ ...prev, page: 1 })); }} /></div>
+            <div className="directory-filter-actions">
+              <label className="directory-toggle"><Switch checked={showInactive} onCheckedChange={(value) => { setShowInactive(value); setPagination(prev => ({ ...prev, page: 1 })); }} />Include inactive</label>
+              <label className="directory-page-size"><span>Per page</span><Select aria-label="Employees per page" value={pagination.limit} onChange={(e) => setPagination(prev => ({ ...prev, page: 1, limit: Number(e.target.value) }))}>{[25,50,100].map(n => <option key={n} value={n}>{n}</option>)}</Select></label>
             </div>
           </div>
         </div>
-
-        {/* Employee Table */}
-        <div className="bg-[hsl(var(--color-card))] rounded-lg shadow-sm border border-[hsl(var(--color-border))] overflow-hidden">
+        <div className="data-table-surface rounded-xl overflow-hidden">
+          <div className="directory-list-heading"><span>{pagination.total} employees</span><label><input type="checkbox" aria-label="Select all employees on this page" checked={employees.length > 0 && employees.every(e => selectedEmployees.includes(e.id))} onChange={toggleSelectAll} />{selectedEmployees.length ? `${selectedEmployees.length} selected` : "Select page"}</label></div>
+          <MobileTableSort columns={[["firstName","Name"],["email","Email"],["phone","Mobile"],["isActive","Status"],["position","Position"],["department","Department"]]} sortConfig={sortConfig} onSort={requestSort} />
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-[hsl(var(--color-surface-elevated))] border-b border-[hsl(var(--color-border))]">
-                <tr>
-                  <th className="px-4 py-3 text-left">
-                    <input
-                      type="checkbox"
-                      checked={selectedEmployees.length === employees.length && employees.length > 0}
-                      onChange={toggleSelectAll}
-                      className="w-4 h-4"
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase">Photo</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase">Emp No.</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase">
-                    <SortableHeader
-                      label="Name"
-                      sortKey="firstName"
-                      onSort={requestSort}
-                      sortDirection={getSortIndicator('firstName')}
-                      className="uppercase text-xs"
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase">
-                    <SortableHeader
-                      label="Email"
-                      sortKey="email"
-                      onSort={requestSort}
-                      sortDirection={getSortIndicator('email')}
-                      className="uppercase text-xs"
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase">
-                    <SortableHeader
-                      label="Mobile"
-                      sortKey="phone"
-                      onSort={requestSort}
-                      sortDirection={getSortIndicator('phone')}
-                      className="uppercase text-xs"
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase">
-                    <SortableHeader
-                      label="Status"
-                      sortKey="isActive"
-                      onSort={requestSort}
-                      sortDirection={getSortIndicator('isActive')}
-                      className="uppercase text-xs"
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase">
-                    <SortableHeader
-                      label="Position"
-                      sortKey="position"
-                      onSort={requestSort}
-                      sortDirection={getSortIndicator('position')}
-                      className="uppercase text-xs"
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase">
-                    <SortableHeader
-                      label="Department"
-                      sortKey="department"
-                      onSort={requestSort}
-                      sortDirection={getSortIndicator('department')}
-                      className="uppercase text-xs"
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[hsl(var(--color-border))]">
-                {loading ? (
-                  <tr>
-                    <td colSpan="10" className="px-4 py-8 text-center text-[hsl(var(--color-foreground-secondary))]">
-                      Loading...
-                    </td>
-                  </tr>
-                ) : employees.length === 0 ? (
-                  <tr>
-                    <td colSpan="10" className="px-4 py-8 text-center text-[hsl(var(--color-foreground-secondary))]">
-                      No employees found
-                    </td>
-                  </tr>
-                ) : (
-                  sortedEmployees.map((employee, index) => (
-                    <tr key={employee.id} className="hover:bg-[hsl(var(--color-surface-elevated))]">
-                      <td className="px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedEmployees.includes(employee.id)}
-                          onChange={() => toggleSelectEmployee(employee.id)}
-                          className="w-4 h-4"
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="w-10 h-10 rounded-full bg-[hsl(var(--color-border))] flex items-center justify-center">
-                          <Users className="w-6 h-6 text-[hsl(var(--color-foreground-secondary))]" />
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-[hsl(var(--color-primary))] font-medium">
-                        {(pagination.page - 1) * pagination.limit + index + 1}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-[hsl(var(--color-primary))] hover:underline cursor-pointer">
-                        {employee.firstName} {employee.lastName}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))]">
-                        {employee.email || '-'}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))]">
-                        {employee.phone || '-'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 text-xs rounded ${
-                          employee.isActive
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-[hsl(var(--color-surface-elevated))] text-[hsl(var(--color-foreground-secondary))]'
-                        }`}>
-                          {employee.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))]">
-                        {employee.position}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))]">
-                        {employee.department || '-'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleEdit(employee)}
-                            className="text-[hsl(var(--color-primary))] hover:text-[hsl(var(--color-primary-dark))]"
-                            title="Edit"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(employee.id)}
-                            className="text-[hsl(var(--color-error))] hover:text-red-800"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                          <button className="text-[hsl(var(--color-foreground-secondary))] hover:text-[hsl(var(--color-foreground))]">
-                            <ChevronDown className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
+            <ResponsiveTable aria-label="Employees">
+              <thead role="rowgroup"><tr role="row">
+                <th scope="col" className="sr-only">Select</th>
+                {[['Name','firstName'],['Email','email'],['Mobile','phone'],['Status','isActive'],['Position','position'],['Department','department']].map(([label,key]) => <th key={key} scope="col" className="px-4 py-3"><SortableHeader label={label} sortKey={key} onSort={requestSort} sortDirection={getSortIndicator(key)} /></th>)}
+                <th scope="col" className="px-4 py-3">Actions</th>
+              </tr></thead>
+              <tbody role="rowgroup">
+                {loading ? <tr role="row"><td role="cell" colSpan={8} className="p-10 text-center text-foreground-muted">Loading employees…</td></tr> : sortedEmployees.length === 0 ? <tr role="row"><td role="cell" colSpan={8} className="p-10 text-center text-foreground-muted">No employees found. Try another search or add your first team member.</td></tr> : sortedEmployees.map(employee => <tr role="row" key={employee.id} className="border-b border-[hsl(var(--color-border))] hover:bg-[hsl(var(--color-surface))]">
+                  <td role="cell" data-field="select" className="px-3"><input type="checkbox" aria-label={`Select ${employee.firstName} ${employee.lastName}`} checked={selectedEmployees.includes(employee.id)} onChange={() => toggleSelectEmployee(employee.id)} /></td>
+                  <td role="cell" data-label="Employee" data-field="title" className="px-4 py-4"><button className="record-link" onClick={() => handleEdit(employee)}>{employee.firstName} {employee.lastName}</button></td>
+                  <td role="cell" data-label="Email" data-field="wide" className="px-4 py-4">{employee.email ? <a href={`mailto:${employee.email}`}>{employee.email}</a> : '—'}</td>
+                  <td role="cell" data-label="Mobile" className="px-4 py-4">{employee.phone ? <a href={`tel:${employee.phone}`}>{employee.phone}</a> : '—'}</td>
+                  <td role="cell" data-label="Status" data-field="status" className="px-4 py-4"><span className={`attendance-status ${employee.isActive ? 'badge-success' : 'badge-neutral'}`}>{employee.isActive ? 'Active' : 'Inactive'}</span></td>
+                  <td role="cell" data-label="Position" className="px-4 py-4">{employee.position || '—'}</td>
+                  <td role="cell" data-label="Department" className="px-4 py-4">{employee.department || '—'}</td>
+                  <td role="cell" data-label="Actions" data-field="actions" className="px-4 py-4"><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => handleEdit(employee)} aria-label={`Edit ${employee.firstName}`}><Edit size={14} /><span>Edit</span></Button><Button size="sm" variant="ghost" onClick={() => handleDelete(employee.id)} aria-label={`Delete ${employee.firstName}`} className="text-[hsl(var(--color-error))]"><Trash2 size={14} /><span className="mobile-action-label">Delete</span></Button></div></td>
+                </tr>)}
               </tbody>
-            </table>
+            </ResponsiveTable>
           </div>
-
-          {/* Pagination */}
-          {pagination.totalPages > 1 && (
-            <div className="px-4 py-3 border-t border-[hsl(var(--color-border))] flex items-center justify-between bg-[hsl(var(--color-surface-elevated))]">
-              <div className="text-sm text-[hsl(var(--color-foreground))]">
-                Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
-                {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
-                {pagination.total} employees
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
-                  disabled={pagination.page === 1}
-                >
-                  Previous
-                </Button>
-                <span className="text-sm text-[hsl(var(--color-foreground))]">
-                  Page {pagination.page} of {pagination.totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-                  disabled={pagination.page === pagination.totalPages}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          )}
+          <Pagination {...pagination} loading={loading} noun="employees" onPageChange={page => { setSelectedEmployees([]); setPagination(prev => ({ ...prev, page })); }} />
         </div>
       </div>
-
-      {/* Add/Edit Employee Modal */}
-      <AddEmployeeModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSave={handleSaveEmployee}
-        employee={editingEmployee}
-      />
+      <AddEmployeeModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveEmployee} employee={editingEmployee} />
     </div>
   );
 }

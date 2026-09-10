@@ -48,24 +48,6 @@ const createSiteValidation = [
     .trim()
     .isLength({ max: 255 }).withMessage('Region must not exceed 255 characters'),
 
-  body('remindEmployees')
-    .optional()
-    .trim(),
-
-  body('defaultStartTime')
-    .optional()
-    .trim()
-    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('Default start time must be in HH:MM format'),
-
-  body('defaultEndTime')
-    .optional()
-    .trim()
-    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('Default end time must be in HH:MM format'),
-
-  body('defaultShiftDuration')
-    .optional()
-    .isInt({ min: 1, max: 24 }).withMessage('Default shift duration must be between 1 and 24 hours'),
-
   body('address')
     .optional()
     .trim(),

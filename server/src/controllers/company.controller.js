@@ -1,144 +1,91 @@
+/**
+ * Company Controller (an organisation's own settings)
+ *
+ * Creating, deleting and suspending organisations, and deciding their modules,
+ * are master-admin operations — see master.controller.js.
+ */
+
 const companyService = require('../services/company.service');
 const asyncHandler = require('../utils/asyncHandler');
 
+const contextFrom = (req) => ({
+  companyId: req.user.companyId,
+  userId: req.user.userId,
+  role: req.user.role,
+});
+
 /**
- * Get all companies
+ * The caller's own organisation, in list shape
  * @route GET /api/v1/companies
  */
 const getAllCompanies = asyncHandler(async (req, res) => {
-  const { search, isActive, page, limit, sortBy, order} = req.query;
+  const result = await companyService.getAllCompanies(contextFrom(req));
+  res.json({ success: true, data: result });
+});
 
-  const context = {
-    companyId: req.user.companyId,
-    userId: req.user.userId,
-    role: req.user.role
-  };
+/**
+ * The caller's own organisation
+ * @route GET /api/v1/companies/me
+ */
+const getMyCompany = asyncHandler(async (req, res) => {
+  const company = await companyService.getMyCompany(contextFrom(req));
+  res.json({ success: true, data: company });
+});
 
-  const result = await companyService.getAllCompanies(context, {
-    search,
-    isActive,
-    page,
-    limit,
-    sortBy,
-    order
-  });
-
+/**
+ * Update the caller's own organisation
+ * @route PUT /api/v1/companies/me
+ */
+const updateMyCompany = asyncHandler(async (req, res) => {
+  const company = await companyService.updateMyCompany(contextFrom(req), req.body);
   res.json({
     success: true,
-    data: result
+    data: company,
+    message: 'Settings saved',
   });
 });
 
 /**
- * Get single company by ID
+ * Get single company by ID (own organisation only)
  * @route GET /api/v1/companies/:id
  */
 const getCompanyById = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-
-  const context = {
-    companyId: req.user.companyId,
-    userId: req.user.userId,
-    role: req.user.role
-  };
-
-  const company = await companyService.getCompanyById(context, id);
-
-  res.json({
-    success: true,
-    data: company
-  });
+  const company = await companyService.getCompanyById(contextFrom(req), req.params.id);
+  res.json({ success: true, data: company });
 });
 
 /**
- * Create a new company
- * @route POST /api/v1/companies
- */
-const createCompany = asyncHandler(async (req, res) => {
-  const context = {
-    companyId: req.user.companyId,
-    userId: req.user.userId,
-    role: req.user.role
-  };
-
-  const company = await companyService.createCompany(context, req.body);
-
-  res.status(201).json({
-    success: true,
-    data: company,
-    message: 'Company created successfully'
-  });
-});
-
-/**
- * Update a company
+ * Update a company (own organisation only)
  * @route PUT /api/v1/companies/:id
  */
 const updateCompany = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-
-  const context = {
-    companyId: req.user.companyId,
-    userId: req.user.userId,
-    role: req.user.role
-  };
-
-  const company = await companyService.updateCompany(context, id, req.body);
+  const company = await companyService.updateCompany(
+    contextFrom(req),
+    req.params.id,
+    req.body
+  );
 
   res.json({
     success: true,
     data: company,
-    message: 'Company updated successfully'
+    message: 'Company updated successfully',
   });
 });
 
 /**
- * Delete a company
- * @route DELETE /api/v1/companies/:id
- */
-const deleteCompany = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-
-  const context = {
-    companyId: req.user.companyId,
-    userId: req.user.userId,
-    role: req.user.role
-  };
-
-  const result = await companyService.deleteCompany(context, id);
-
-  res.json({
-    success: true,
-    data: result
-  });
-});
-
-/**
- * Get company statistics
+ * Get company statistics (own organisation only)
  * @route GET /api/v1/companies/:id/stats
  */
 const getCompanyStats = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-
-  const context = {
-    companyId: req.user.companyId,
-    userId: req.user.userId,
-    role: req.user.role
-  };
-
-  const stats = await companyService.getCompanyStats(context, id);
-
-  res.json({
-    success: true,
-    data: stats
-  });
+  const stats = await companyService.getCompanyStats(contextFrom(req), req.params.id);
+  res.json({ success: true, data: stats });
 });
 
 module.exports = {
   getAllCompanies,
+  getMyCompany,
+  updateMyCompany,
   getCompanyById,
-  createCompany,
   updateCompany,
-  deleteCompany,
-  getCompanyStats
+  getCompanyStats,
 };

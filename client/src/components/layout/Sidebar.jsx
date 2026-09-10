@@ -1,189 +1,41 @@
-import { useState } from "react";
-import { NavLink } from "react-router-dom";
-import {
-  Home,
-  Calendar,
-  Clock,
-  Users,
-  Building2,
-  FileText,
-  BarChart3,
-  Bell,
-  Settings,
-  ChevronDown,
-  ChevronRight,
-} from "lucide-react";
+import { useRef } from "react";
+import { NavLink, useNavigate } from "react-router-dom";
+import { ArrowUpRight, Building2, LogOut, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { useModuleStore } from "../../store/moduleStore";
+import { useCompanyStore } from "../../store/companyStore";
+import { clearSession } from "../../lib/session";
+import { useOverlay } from "../../hooks/useOverlay";
+import { getNavigation } from "./navigation";
+import Brand from "./Brand";
+import ThemeToggle from "../ui/ThemeToggle";
 
-export default function Sidebar({ isOpen, onClose }) {
-  const [employeesOpen, setEmployeesOpen] = useState(false);
-  const [companyOpen, setCompanyOpen] = useState(false);
-  const [operationsOpen, setOperationsOpen] = useState(false);
-  const [attendanceOpen, setAttendanceOpen] = useState(false);
-
-  const navItems = [
-    { to: "/dashboard", label: "Dashboard", icon: Home },
-    { to: "/scheduler", label: "Scheduler", icon: Calendar },
-    {
-      label: "Attendance",
-      icon: Clock,
-      hasSubmenu: true,
-      isOpen: attendanceOpen,
-      toggle: () => setAttendanceOpen(!attendanceOpen),
-      submenu: [
-        { label: "Time Attendance", to: "/attendance/time" },
-        { label: "Export Timesheet", to: "/attendance/export" },
-      ],
-    },
-    {
-      label: "Employees",
-      icon: Users,
-      hasSubmenu: true,
-      isOpen: employeesOpen,
-      toggle: () => setEmployeesOpen(!employeesOpen),
-      submenu: [
-        { label: "Employees", to: "/employees" },
-        { label: "Run Compliance Report", to: "/employees/compliance" },
-        { label: "Job Applications", to: "/employees/applications" },
-        { label: "Leave Management", to: "/employees/leave" },
-      ],
-    },
-    {
-      label: "Company",
-      icon: Building2,
-      hasSubmenu: true,
-      isOpen: companyOpen,
-      toggle: () => setCompanyOpen(!companyOpen),
-      submenu: [
-        { label: "Sites", to: "/company/sites" },
-        { label: "Clients", to: "/company/clients" },
-      ],
-    },
-    {
-      label: "Operations",
-      icon: FileText,
-      hasSubmenu: true,
-      isOpen: operationsOpen,
-      toggle: () => setOperationsOpen(!operationsOpen),
-      submenu: [
-        { label: "Site Activities", to: "/operations/site-activities" },
-      ],
-    },
-    { to: "/reports", label: "Reports", icon: BarChart3 },
-    { to: "/notifications", label: "Notifications", icon: Bell },
-    { to: "/settings", label: "Settings", icon: Settings },
-  ];
-
-  return (
-    <>
-      {/* Mobile Overlay */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-          onClick={onClose}
-        />
-      )}
-
-      {/* Sidebar */}
-      <aside
-        className={`${
-          isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        } ${
-          isOpen ? "w-64" : "lg:w-20 w-64"
-        } bg-[hsl(var(--color-surface))] border-r border-[hsl(var(--color-border))] h-screen fixed lg:sticky top-0 flex flex-col shadow-lg transition-all duration-300 z-50`}
-      >
-        {/* Logo/Brand */}
-        <div className="p-6 border-b border-[hsl(var(--color-border))]">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-[hsl(var(--color-primary))] to-[hsl(var(--color-primary-hover))] rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
-              <span className="text-white font-bold text-lg">R</span>
-            </div>
-            {(isOpen || window.innerWidth >= 1024) && (
-              <div className={isOpen ? "block" : "hidden lg:hidden"}>
-                <h1 className="text-lg font-bold text-[hsl(var(--color-foreground))]">ROSTER</h1>
-                <p className="text-xs text-[hsl(var(--color-foreground-secondary))]">Mechanic</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3">
-        <ul className="space-y-1">
-          {navItems.map((item, index) => {
-            const Icon = item.icon;
-
-            if (item.hasSubmenu) {
-              return (
-                <li key={index}>
-                  <button
-                    onClick={item.toggle}
-                    className={`w-full flex items-center ${
-                      isOpen ? "justify-between px-4" : "justify-center px-2"
-                    } py-3 text-sm font-medium text-[hsl(var(--color-foreground-secondary))] hover:bg-[hsl(var(--color-surface-elevated))] rounded-xl transition-colors`}
-                    title={!isOpen ? item.label : ""}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Icon className="w-5 h-5 text-[hsl(var(--color-foreground-muted))] flex-shrink-0" />
-                      {isOpen && <span>{item.label}</span>}
-                    </div>
-                    {isOpen && (
-                      item.isOpen ? (
-                        <ChevronDown className="w-4 h-4 text-[hsl(var(--color-foreground-muted))]" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4 text-[hsl(var(--color-foreground-muted))]" />
-                      )
-                    )}
-                  </button>
-                  {item.isOpen && isOpen && (
-                    <ul className="mt-1 ml-4 space-y-1">
-                      {item.submenu.map((subItem, subIndex) => (
-                        <li key={subIndex}>
-                          <NavLink
-                            to={subItem.to}
-                            onClick={() => window.innerWidth < 1024 && onClose && onClose()}
-                            className={({ isActive }) =>
-                              `block px-4 py-2 text-sm rounded-lg transition-colors ${
-                                isActive
-                                  ? "bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] font-medium"
-                                  : "text-[hsl(var(--color-foreground-secondary))] hover:bg-[hsl(var(--color-surface-elevated))]"
-                              }`
-                            }
-                          >
-                            {subItem.label}
-                          </NavLink>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              );
-            }
-
-            return (
-              <li key={index}>
-                <NavLink
-                  to={item.to}
-                  onClick={() => window.innerWidth < 1024 && onClose && onClose()}
-                  className={({ isActive }) =>
-                    `flex items-center gap-3 ${
-                      isOpen ? "px-4" : "lg:px-2 px-4 lg:justify-center"
-                    } py-3 text-sm font-medium rounded-xl transition-colors ${
-                      isActive
-                        ? "bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] shadow-lg"
-                        : "text-[hsl(var(--color-foreground-secondary))] hover:bg-[hsl(var(--color-surface-elevated))]"
-                    }`
-                  }
-                  title={!isOpen ? item.label : ""}
-                >
-                  <Icon className="w-5 h-5 flex-shrink-0" />
-                  {(isOpen || window.innerWidth < 1024) && <span className={!isOpen ? "lg:hidden" : ""}>{item.label}</span>}
-                </NavLink>
-              </li>
-            );
-          })}
-        </ul>
+export default function Sidebar({ isOpen, onClose, collapsed, onCollapse, role = "admin" }) {
+  const navigate = useNavigate();
+  const sidebarRef = useRef(null);
+  const hasModule = useModuleStore((state) => state.hasModule);
+  const organisation = useCompanyStore((state) => state.organisation);
+  const groups = getNavigation(role, hasModule);
+  useOverlay(isOpen, onClose, sidebarRef);
+  const workspace = role === "master" ? "Platform administration" : organisation?.name || "Your organisation";
+  const subtitle = role === "master" ? "Master workspace" : role === "employee" ? "Employee workspace" : "Management workspace";
+  return <>
+    {isOpen && <div className="sidebar-backdrop" onClick={onClose} aria-hidden="true" />}
+    <aside id="workspace-navigation" ref={sidebarRef} tabIndex={-1} className={`workspace-sidebar ${isOpen ? "is-open" : ""} ${collapsed ? "is-collapsed" : ""}`} aria-label="Workspace navigation">
+      <div className="sidebar-brand"><Brand /><button type="button" className="icon-button sidebar-close" onClick={onClose} aria-label="Close navigation"><X size={20} /></button></div>
+      <div className="workspace-identity"><span className="workspace-identity-icon"><Building2 size={18} strokeWidth={1.6} /></span><div className="sidebar-label"><strong title={workspace}>{workspace}</strong><span>{subtitle}</span></div></div>
+      <nav className="sidebar-nav">
+        {groups.map((group) => <div className="nav-group" key={group.label}><p className="nav-group-label">{group.label}</p>
+          {group.items.map(({ to, label, icon: Icon }) => <NavLink key={to} to={to} end={to !== "/master/organisations"} onClick={onClose} title={label} className={({ isActive }) => `sidebar-link ${isActive ? "is-active" : ""}`}>
+            <Icon size={18} strokeWidth={1.7} /><span className="sidebar-label">{label}</span><span className="nav-active-dot" />
+          </NavLink>)}
+        </div>)}
       </nav>
+      <div className="sidebar-footer">
+        <div className="sidebar-appearance"><span className="eyebrow">APPEARANCE</span><ThemeToggle expanded /></div>
+        <div className="sidebar-bottom"><button type="button" onClick={() => { clearSession(); navigate("/login", { replace: true }); }} className="sidebar-signout" title="Sign out"><LogOut size={17} /><span className="sidebar-label">Sign out</span><ArrowUpRight size={14} className="sidebar-label ml-auto" /></button>
+          <button type="button" onClick={onCollapse} className="icon-button sidebar-collapse" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>{collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}</button>
+        </div>
+      </div>
     </aside>
-    </>
-  );
+  </>;
 }

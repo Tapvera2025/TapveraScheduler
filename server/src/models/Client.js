@@ -22,7 +22,7 @@ const clientSchema = new mongoose.Schema(
     state: {
       type: String,
       trim: true,
-      enum: ['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT', ''],
+      maxlength: [100, 'State cannot exceed 100 characters'],
     },
 
     invoicingCompany: {

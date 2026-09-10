@@ -27,7 +27,7 @@ const envSchema = Joi.object({
   NODE_ENV: Joi.string()
     .valid('development', 'staging', 'production', 'test')
     .default('development'),
-  APP_NAME: Joi.string().default('RosterPro'),
+  APP_NAME: Joi.string().default('Tapvera Scheduler'),
   APP_PORT: Joi.number().default(5000),
   APP_URL: Joi.string().uri().required(),
   CLIENT_URL: Joi.string().uri().required(),
@@ -75,6 +75,23 @@ const envSchema = Joi.object({
   AWS_S3_BUCKET: Joi.string().allow('').optional(),
   AWS_S3_ACCESS_KEY: Joi.string().allow('').optional(),
   AWS_S3_SECRET_KEY: Joi.string().allow('').optional(),
+
+  // Third-party integrations
+  OPENWEATHER_API_KEY: Joi.string().allow('').optional(),
+  GOOGLE_MAPS_API_KEY: Joi.string().allow('').optional(),
+
+  // Agent planner (xAI / Grok). All optional: with no key the agent still
+  // works through its typed form, it just cannot interpret free text.
+  XAI_API_KEY: Joi.string().allow('').optional(),
+  XAI_BASE_URL: Joi.string().uri().default('https://api.x.ai/v1'),
+  XAI_MODEL: Joi.string().default('grok-4.6'),
+  // Provider-neutral aliases. The planner speaks plain OpenAI chat-completions,
+  // so any compatible endpoint works: xAI, Groq, a local Ollama, anything else.
+  PLANNER_API_KEY: Joi.string().allow('').optional(),
+  PLANNER_BASE_URL: Joi.string().uri().optional(),
+  PLANNER_MODEL: Joi.string().optional(),
+  XAI_TIMEOUT_MS: Joi.number().default(20000),
+  XAI_MAX_OUTPUT_TOKENS: Joi.number().default(300),
 
   // Monitoring
   SENTRY_DSN: Joi.string().uri().allow('').optional(),
@@ -170,6 +187,23 @@ const config = {
       accessKey: envVars.AWS_S3_ACCESS_KEY,
       secretKey: envVars.AWS_S3_SECRET_KEY,
       region: envVars.AWS_REGION,
+    },
+  },
+
+  integrations: {
+    openWeatherApiKey: envVars.OPENWEATHER_API_KEY,
+    googleMapsApiKey: envVars.GOOGLE_MAPS_API_KEY,
+  },
+
+  // The planner's credentials live here and never leave the server.
+  agent: {
+    apiKey: envVars.PLANNER_API_KEY || envVars.XAI_API_KEY || '',
+    baseUrl: envVars.PLANNER_BASE_URL || envVars.XAI_BASE_URL,
+    model: envVars.PLANNER_MODEL || envVars.XAI_MODEL,
+    timeoutMs: envVars.XAI_TIMEOUT_MS,
+    maxOutputTokens: envVars.XAI_MAX_OUTPUT_TOKENS,
+    get enabled() {
+      return Boolean(envVars.PLANNER_API_KEY || envVars.XAI_API_KEY);
     },
   },
 

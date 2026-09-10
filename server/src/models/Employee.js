@@ -76,6 +76,27 @@ const employeeSchema = new mongoose.Schema(
       type: Date,
     },
 
+    // Address (flat fields, matching the shape the Site model uses)
+    address: {
+      type: String,
+      trim: true,
+    },
+
+    townSuburb: {
+      type: String,
+      trim: true,
+    },
+
+    state: {
+      type: String,
+      trim: true,
+    },
+
+    postalCode: {
+      type: String,
+      trim: true,
+    },
+
     // Australian-specific fields
     tfn: {
       // Tax File Number (encrypted in production)
@@ -128,7 +149,10 @@ employeeSchema.virtual('assignedSites', {
 
 // Indexes
 employeeSchema.index({ email: 1, companyId: 1 }, { unique: true });
-employeeSchema.index({ userId: 1, companyId: 1 }, { unique: true, sparse: true });
+employeeSchema.index(
+  { userId: 1, companyId: 1 },
+  { unique: true, partialFilterExpression: { userId: { $exists: true, $ne: null } } }
+);
 employeeSchema.index({ firstName: 1, lastName: 1, companyId: 1 });
 employeeSchema.index({ position: 1, companyId: 1 });
 employeeSchema.index({ isActive: 1, deletedAt: 1 });

@@ -11,6 +11,11 @@ const Leave = require('../models/Leave');
 // All routes require authentication
 router.use(auth);
 
+// Adhoc requests awaiting a decision are not rostered work, so they are left out
+// of the shift counts. null also covers regular shifts and rows created before
+// adhoc approval existed.
+const ROSTERED = { approvalStatus: { $in: [null, 'APPROVED'] } };
+
 /**
  * GET /api/dashboard/stats
  * Returns summary counts for the admin dashboard stats bar.
@@ -37,30 +42,35 @@ router.get('/stats', asyncHandler(async (req, res) => {
     todayShifts,
     todayTimeRecords,
     pendingLeaveRequests,
+    pendingAdhocRequests,
   ] = await Promise.all([
     // Tentative = IN_PROGRESS shifts today
     Shift.countDocuments({
       companyId,
       status: 'IN_PROGRESS',
       date: { $gte: startOfToday, $lte: endOfToday },
+      ...ROSTERED,
     }),
     // Open shifts = shifts with no employee assigned today
     Shift.countDocuments({
       companyId,
       employeeId: null,
       date: { $gte: startOfToday, $lte: endOfToday },
+      ...ROSTERED,
     }),
     // Unpublished = SCHEDULED shifts today (not yet started)
     Shift.countDocuments({
       companyId,
       status: 'SCHEDULED',
       date: { $gte: startOfToday, $lte: endOfToday },
+      ...ROSTERED,
     }),
     // No Show = CANCELLED or NO_SHOW shifts today
     Shift.countDocuments({
       companyId,
       status: { $in: ['CANCELLED', 'NO_SHOW'] },
       date: { $gte: startOfToday, $lte: endOfToday },
+      ...ROSTERED,
     }),
     // Active employees total
     Employee.countDocuments({ companyId, isActive: true }),
@@ -72,6 +82,7 @@ router.get('/stats', asyncHandler(async (req, res) => {
     Shift.countDocuments({
       companyId,
       date: { $gte: startOfToday, $lte: endOfToday },
+      ...ROSTERED,
     }),
     // Time records today
     TimeRecord.countDocuments({
@@ -80,6 +91,8 @@ router.get('/stats', asyncHandler(async (req, res) => {
     }),
     // Pending leave requests (all time — awaiting action)
     Leave.countDocuments({ companyId, status: 'pending' }),
+    // Adhoc shift requests awaiting a decision
+    Shift.countDocuments({ companyId, isAdhoc: true, approvalStatus: 'PENDING' }),
   ]);
 
   res.json({
@@ -90,8 +103,7 @@ router.get('/stats', asyncHandler(async (req, res) => {
       unpublishedShifts,
       noShowAbsent: noShowShifts,
       leaveRequests: pendingLeaveRequests,
-      availabilityRequests: 0,  // placeholder – no availability model yet
-      licensesExpiry: 0,        // placeholder – no licence model yet
+      pendingAdhocRequests,
       activeEmployees,
       activeSites,
       clockedInNow,
@@ -131,6 +143,7 @@ router.get('/attendance', asyncHandler(async (req, res) => {
     employeeId: { $ne: null },
     date: { $gte: startOfToday, $lte: endOfToday },
     status: { $nin: ['CANCELLED'] },
+    ...ROSTERED,
   })
     .populate('employeeId', 'firstName lastName phone')
     .populate('siteId', 'siteLocationName shortName')
@@ -196,6 +209,113 @@ router.get('/attendance', asyncHandler(async (req, res) => {
   });
 
   res.json({ success: true, data: [...clockedRows, ...noShowRows] });
+}));
+
+/**
+ * GET /api/dashboard/coverage
+ * Rostered hours and shifts against what was actually clocked.
+ *
+ * @query period - today | week | month (default: week)
+ */
+router.get('/coverage', asyncHandler(async (req, res) => {
+  const { companyId } = req.user;
+  const period = ['today', 'week', 'month'].includes(req.query.period)
+    ? req.query.period
+    : 'week';
+
+  const start = new Date();
+  const end = new Date();
+
+  if (period === 'today') {
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+  } else if (period === 'week') {
+    // Week starts Monday
+    const dayOfWeek = (start.getDay() + 6) % 7;
+    start.setDate(start.getDate() - dayOfWeek);
+    start.setHours(0, 0, 0, 0);
+    end.setTime(start.getTime());
+    end.setDate(end.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+  } else {
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+    end.setMonth(end.getMonth() + 1, 0);
+    end.setHours(23, 59, 59, 999);
+  }
+
+  // Aggregations bypass the soft-delete query middleware, so deletedAt is
+  // matched explicitly here.
+  const [rosteredRows, actualRows] = await Promise.all([
+    Shift.aggregate([
+      {
+        $match: {
+          companyId: String(companyId),
+          deletedAt: null,
+          date: { $gte: start, $lte: end },
+          status: { $nin: ['CANCELLED'] },
+          approvalStatus: { $in: [null, 'APPROVED'] },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          shifts: { $sum: 1 },
+          hours: {
+            $sum: { $divide: [{ $subtract: ['$endTime', '$startTime'] }, 3600000] },
+          },
+        },
+      },
+    ]),
+    TimeRecord.aggregate([
+      {
+        $match: {
+          companyId: String(companyId),
+          deletedAt: null,
+          clockInTime: { $gte: start, $lte: end },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          records: { $sum: 1 },
+          hours: { $sum: { $ifNull: ['$totalHours', 0] } },
+          stillClockedIn: {
+            $sum: { $cond: [{ $eq: ['$status', 'CLOCKED_IN'] }, 1, 0] },
+          },
+        },
+      },
+    ]),
+  ]);
+
+  const round = (value) => Math.round((value || 0) * 100) / 100;
+
+  const rosteredHours = round(rosteredRows[0]?.hours);
+  const rosteredShifts = rosteredRows[0]?.shifts || 0;
+  const actualHours = round(actualRows[0]?.hours);
+  const actualRecords = actualRows[0]?.records || 0;
+  const stillClockedIn = actualRows[0]?.stillClockedIn || 0;
+
+  const pct = (part, whole) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
+
+  res.json({
+    success: true,
+    data: {
+      period,
+      start,
+      end,
+      rostered: { hours: rosteredHours, shifts: rosteredShifts },
+      actual: { hours: actualHours, records: actualRecords, stillClockedIn },
+      difference: {
+        hours: round(actualHours - rosteredHours),
+        shifts: actualRecords - rosteredShifts,
+      },
+      // How much of the rostered time was actually worked
+      hoursPercentage: pct(actualHours, rosteredHours),
+      // How many rostered shifts were attended at all
+      shiftsPercentage: pct(actualRecords, rosteredShifts),
+    },
+  });
 }));
 
 module.exports = router;

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { auth, authorize } = require('../middleware/auth');
+const { requireModule } = require('../middleware/moduleAccess');
 const {
   getAllLeaves,
   getLeaveStats,
@@ -15,6 +16,9 @@ const {
 
 // All routes require authentication
 router.use(auth);
+
+// Gated behind the 'leave' module
+router.use(requireModule('leave'));
 
 // ── Employee self-service ─────────────────────────────────────────────────────
 router.get('/my', getMyLeaves);

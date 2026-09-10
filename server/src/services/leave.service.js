@@ -23,12 +23,19 @@ class LeaveService {
    * Get all leave requests for the company (admin view)
    */
   async getAllLeaves(companyId, filters = {}) {
-    const { status, employeeId, leaveType, page = 1, limit = 25 } = filters;
+    const { status, employeeId, leaveType, startDate, endDate, page = 1, limit = 25 } = filters;
 
     const query = { companyId };
     if (status && status !== 'all') query.status = status;
     if (employeeId) query.employeeId = employeeId;
     if (leaveType && leaveType !== 'all') query.leaveType = leaveType;
+
+    // Return leave that overlaps the requested window, rather than only leave
+    // that starts inside it. This includes a request spanning the boundary.
+    const rangeStart = startDate ? new Date(startDate) : null;
+    const rangeEnd = endDate ? new Date(endDate) : null;
+    if (rangeStart && !Number.isNaN(rangeStart.getTime())) query.endDate = { $gte: rangeStart };
+    if (rangeEnd && !Number.isNaN(rangeEnd.getTime())) query.startDate = { $lte: rangeEnd };
 
     const skip = (page - 1) * limit;
 
@@ -203,18 +210,18 @@ class LeaveService {
         new Date(d).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });
 
       const statusLabel = newStatus === 'approved' ? 'Approved ✅' : 'Declined ❌';
-      const statusColor = newStatus === 'approved' ? '#16a34a' : '#dc2626';
-      const statusBg = newStatus === 'approved' ? '#f0fdf4' : '#fef2f2';
-      const statusBorder = newStatus === 'approved' ? '#16a34a' : '#dc2626';
+      const statusColor = newStatus === 'approved' ? '#30704f' : '#ab423c';
+      const statusBg = newStatus === 'approved' ? '#edf5ef' : '#fbefee';
+      const statusBorder = newStatus === 'approved' ? '#30704f' : '#ab423c';
 
       const html = `
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f4f4f4;">
+<body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f7f6f3;">
   <table style="width:100%;border-collapse:collapse;">
     <tr><td align="center" style="padding:40px 0;">
-      <table style="width:600px;background:#fff;box-shadow:0 4px 6px rgba(0,0,0,.1);border-collapse:collapse;">
+      <table style="width:100%;max-width:600px;background:#fff;box-shadow:0 4px 6px rgba(0,0,0,.1);border-collapse:collapse;">
         <tr><td style="padding:30px;background:${statusColor};text-align:center;">
           <h1 style="margin:0;color:#fff;font-size:24px;">Leave Request ${statusLabel}</h1>
         </td></tr>
@@ -233,8 +240,8 @@ class LeaveService {
           </table>
           <p style="color:#999;font-size:13px;">If you have questions, please contact your manager.</p>
         </td></tr>
-        <tr><td style="padding:20px;background:#f8fafc;text-align:center;border-top:1px solid #e5e7eb;">
-          <p style="margin:0;color:#999;font-size:12px;">This is an automated message from RosterMechanic. Please do not reply.</p>
+        <tr><td style="padding:20px;background:#f5f3ef;text-align:center;border-top:1px solid #e4dfd8;">
+          <p style="margin:0;color:#999;font-size:12px;">This is an automated message from Tapvera Scheduler. Please do not reply.</p>
         </td></tr>
       </table>
     </td></tr>
@@ -277,27 +284,27 @@ class LeaveService {
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f4f4f4;">
+<body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f7f6f3;">
   <table style="width:100%;border-collapse:collapse;">
     <tr><td align="center" style="padding:40px 0;">
-      <table style="width:600px;background:#fff;box-shadow:0 4px 6px rgba(0,0,0,.1);border-collapse:collapse;">
-        <tr><td style="padding:30px;background:#2563eb;text-align:center;">
+      <table style="width:100%;max-width:600px;background:#fff;box-shadow:0 4px 6px rgba(0,0,0,.1);border-collapse:collapse;">
+        <tr><td style="padding:30px;background:#a44d28;text-align:center;">
           <h1 style="margin:0;color:#fff;font-size:24px;">New Leave Request</h1>
         </td></tr>
         <tr><td style="padding:30px;">
           <p style="color:#333;font-size:16px;">A new leave request has been submitted and requires your attention.</p>
           <table style="width:100%;border-collapse:collapse;margin:20px 0;">
-            <tr><td style="padding:15px;background:#f0f9ff;border-left:4px solid #2563eb;border-radius:4px;">
+            <tr><td style="padding:15px;background:#f8eee7;border-left:4px solid #a44d28;border-radius:4px;">
               <p style="margin:0 0 8px;color:#555;font-size:14px;"><strong>Employee:</strong> ${employee.firstName} ${employee.lastName}</p>
               <p style="margin:0 0 8px;color:#555;font-size:14px;"><strong>Leave Type:</strong> ${typeLabel}</p>
               <p style="margin:0 0 8px;color:#555;font-size:14px;"><strong>Period:</strong> ${fmt(leave.startDate)} → ${fmt(leave.endDate)} (${leave.periodDays} day${leave.periodDays !== 1 ? 's' : ''})</p>
               ${leave.notes ? `<p style="margin:0;color:#555;font-size:14px;"><strong>Notes:</strong> ${leave.notes}</p>` : ''}
             </td></tr>
           </table>
-          <p style="color:#999;font-size:13px;">Please log in to RosterMechanic to approve or decline this request.</p>
+          <p style="color:#999;font-size:13px;">Please log in to Tapvera Scheduler to approve or decline this request.</p>
         </td></tr>
-        <tr><td style="padding:20px;background:#f8fafc;text-align:center;border-top:1px solid #e5e7eb;">
-          <p style="margin:0;color:#999;font-size:12px;">This is an automated message from RosterMechanic.</p>
+        <tr><td style="padding:20px;background:#f5f3ef;text-align:center;border-top:1px solid #e4dfd8;">
+          <p style="margin:0;color:#999;font-size:12px;">This is an automated message from Tapvera Scheduler.</p>
         </td></tr>
       </table>
     </td></tr>

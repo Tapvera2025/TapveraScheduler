@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { User, Mail, Shield, LogOut, Edit2, X, Check, Calendar, KeyRound } from "lucide-react";
 import { userApi } from "../../lib/api";
 import toast from "react-hot-toast";
+import { formatDate as orgDate } from "../../lib/format";
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -84,11 +85,11 @@ export default function Profile() {
   const roleInfo = getRoleDisplay(profile?.role);
 
   return (
-    <div className="min-h-screen bg-[hsl(var(--color-background))] py-6 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-3xl mx-auto">
+    <div className="profile-page">
+      <div className="profile-shell max-w-3xl">
 
         {/* Header */}
-        <div className="mb-6">
+        <div className="profile-heading">
           <h1 className="text-2xl sm:text-3xl font-bold text-[hsl(var(--color-foreground))]">My Profile</h1>
           <p className="mt-1 text-sm text-[hsl(var(--color-foreground-secondary))]">
             Manage your account information and settings
@@ -96,26 +97,26 @@ export default function Profile() {
         </div>
 
         {/* Profile Card */}
-        <div className="bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] rounded-xl overflow-hidden shadow-sm">
+        <div className="profile-card">
 
           {/* Profile Header Banner */}
-          <div className="bg-gradient-to-r from-[hsl(var(--color-primary))] to-orange-600 px-6 py-8">
+          <div className="profile-hero">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-center space-x-4">
-                <div className="w-16 h-16 sm:w-20 sm:h-20 bg-white/20 rounded-full flex items-center justify-center border-2 border-white/30 shadow-lg">
-                  <span className="text-white text-xl sm:text-2xl font-bold">
+                <div className="profile-avatar w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center">
+                  <span className="text-xl sm:text-2xl font-bold">
                     {profile?.name?.charAt(0).toUpperCase()}
                   </span>
                 </div>
-                <div className="text-white">
+                <div>
                   <h2 className="text-xl sm:text-2xl font-bold">{profile?.name}</h2>
-                  <p className="text-white/80 text-sm sm:text-base mt-0.5">{roleInfo.title}</p>
+                  <p className="profile-role text-sm sm:text-base">{roleInfo.title}</p>
                 </div>
               </div>
               {!isEditing && (
                 <button
                   onClick={() => setIsEditing(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors border border-white/30 font-medium text-sm"
+                  className="profile-edit-button flex items-center gap-2 px-4 py-2 font-medium text-sm"
                 >
                   <Edit2 className="w-4 h-4" />
                   Edit Profile
@@ -144,7 +145,7 @@ export default function Profile() {
                     placeholder="Enter your name"
                   />
                 ) : (
-                  <p className="text-[hsl(var(--color-foreground))] text-base sm:text-lg font-medium bg-[hsl(var(--color-surface-elevated))] px-4 py-2.5 rounded-lg border border-[hsl(var(--color-border))]">
+                  <p className="profile-value text-[hsl(var(--color-foreground))] text-base sm:text-lg font-medium px-4 py-2.5 rounded-lg border">
                     {profile?.name}
                   </p>
                 )}
@@ -166,7 +167,7 @@ export default function Profile() {
                     placeholder="Enter your email"
                   />
                 ) : (
-                  <p className="text-[hsl(var(--color-foreground))] text-base sm:text-lg font-medium bg-[hsl(var(--color-surface-elevated))] px-4 py-2.5 rounded-lg border border-[hsl(var(--color-border))]">
+                  <p className="profile-value text-[hsl(var(--color-foreground))] text-base sm:text-lg font-medium px-4 py-2.5 rounded-lg border">
                     {profile?.email}
                   </p>
                 )}
@@ -194,7 +195,7 @@ export default function Profile() {
                   <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[hsl(var(--color-primary))] text-white rounded-lg hover:bg-[hsl(var(--color-primary-hover))] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm font-medium"
+                    className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] rounded-lg hover:bg-[hsl(var(--color-primary-hover))] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm font-medium"
                   >
                     <Check className="w-4 h-4" />
                     {saving ? "Saving..." : "Save Changes"}
@@ -216,7 +217,7 @@ export default function Profile() {
           <div className="px-6 py-4 bg-[hsl(var(--color-surface-elevated))] border-t border-[hsl(var(--color-border))]">
             <button
               onClick={handleLogout}
-              className="flex items-center gap-2 text-red-500 hover:text-red-400 font-medium transition-colors"
+              className="flex items-center gap-2 text-[hsl(var(--color-error))] hover:text-[hsl(var(--color-error))] font-medium transition-colors"
             >
               <LogOut className="w-5 h-5" />
               Logout
@@ -234,21 +235,13 @@ export default function Profile() {
             <div className="bg-[hsl(var(--color-surface-elevated))] border border-[hsl(var(--color-border))] px-4 py-3 rounded-lg">
               <span className="text-xs sm:text-sm font-medium text-[hsl(var(--color-foreground-secondary))]">Account Created</span>
               <p className="text-[hsl(var(--color-foreground))] font-semibold mt-1 text-sm sm:text-base">
-                {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString('en-AU', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
-                }) : "N/A"}
+                {orgDate(profile?.createdAt, "N/A")}
               </p>
             </div>
             <div className="bg-[hsl(var(--color-surface-elevated))] border border-[hsl(var(--color-border))] px-4 py-3 rounded-lg">
               <span className="text-xs sm:text-sm font-medium text-[hsl(var(--color-foreground-secondary))]">Last Login</span>
               <p className="text-[hsl(var(--color-foreground))] font-semibold mt-1 text-sm sm:text-base">
-                {profile?.lastLoginAt ? new Date(profile.lastLoginAt).toLocaleDateString('en-AU', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
-                }) : "N/A"}
+                {orgDate(profile?.lastLoginAt, "N/A")}
               </p>
             </div>
           </div>

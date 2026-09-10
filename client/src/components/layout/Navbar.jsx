@@ -1,130 +1,71 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import {
-  Search,
-  ChevronDown,
-  LogOut,
-  User,
-  Menu,
-} from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Search, ChevronDown, ChevronRight, LogOut, UserRound, Menu, X, ArrowUpRight, Command } from "lucide-react";
 import NotificationBell from "../notifications/NotificationBell";
+import ThemeToggle from "../ui/ThemeToggle";
+import { clearSession } from "../../lib/session";
+import { useModuleStore } from "../../store/moduleStore";
+import { useOverlay } from "../../hooks/useOverlay";
+import { getNavigation } from "./navigation";
 
-export default function Navbar({ onToggleSidebar }) {
+export default function Navbar({ onToggleSidebar, sidebarOpen = false, role = "admin" }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-
-  // Get user info from localStorage
-  const userName = localStorage.getItem("userName") || "User";
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef(null);
+  const menuRef = useRef(null);
+  const closeSearch = useCallback(() => setSearchOpen(false), []);
+  useOverlay(searchOpen, closeSearch, searchRef);
+  const hasModule = useModuleStore((state) => state.hasModule);
+  const routes = getNavigation(role, hasModule).flatMap((group) => group.items);
+  const current = routes.find((item) => item.to === pathname) || [...routes].reverse().find((item) => pathname.startsWith(item.to));
+  const userName = localStorage.getItem("userName") || "Your account";
   const userEmail = localStorage.getItem("userEmail") || "";
-  const userRole = localStorage.getItem("userRole") || "USER";
-  const userInitials = userName.split(" ").map(n => n[0]).join("").toUpperCase().substring(0, 2);
-
-  const handleLogout = () => {
-    // Clear all authentication data
-    localStorage.removeItem("isAuthenticated");
-    localStorage.removeItem("token");
-    localStorage.removeItem("userRole");
-    localStorage.removeItem("userName");
-    localStorage.removeItem("userEmail");
-
-    // Also clear auth-storage from zustand persist
-    localStorage.removeItem("auth-storage");
-
-    // Navigate to login and replace history to prevent back button access
-    navigate("/login", { replace: true });
-  };
-
-  return (
-    <nav className="bg-[hsl(var(--color-surface))] border-b border-[hsl(var(--color-border))] shadow-md sticky top-0 z-40">
-      <div className="mx-auto px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Menu Toggle & Search Bar */}
-          <div className="flex items-center gap-4 flex-1 max-w-xl">
-            <button
-              onClick={onToggleSidebar}
-              className="p-2 hover:bg-[hsl(var(--color-surface-elevated))] rounded-xl transition-colors"
-            >
-              <Menu className="w-5 h-5 text-[hsl(var(--color-foreground-muted))]" />
-            </button>
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[hsl(var(--color-foreground-muted))]" />
-              <input
-                type="text"
-                placeholder="Search"
-                className="w-full pl-10 pr-4 py-2 bg-[hsl(var(--color-surface-elevated))] border border-[hsl(var(--color-border))] text-[hsl(var(--color-foreground))] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--color-primary))] transition-all placeholder:text-[hsl(var(--color-foreground-muted))]"
-              />
-            </div>
-          </div>
-
-          {/* Right Side Actions */}
-          <div className="flex items-center gap-4 ml-6">
-            {/* Notification Bell */}
-            <NotificationBell />
-
-            {/* User Menu */}
-            <div className="relative">
-              <button
-                onClick={() => setUserMenuOpen(!userMenuOpen)}
-                className="flex items-center gap-3 px-3 py-2 hover:bg-[hsl(var(--color-surface-elevated))] rounded-xl transition-colors"
-              >
-                <div className="w-8 h-8 bg-gradient-to-br from-[hsl(var(--color-primary))] to-[hsl(var(--color-primary-hover))] rounded-full flex items-center justify-center">
-                  <span className="text-white text-sm font-semibold">{userInitials}</span>
-                </div>
-                <div className="hidden md:block text-left">
-                  <div className="text-sm font-semibold text-[hsl(var(--color-foreground))]">{userName}</div>
-                  <div className="text-xs text-[hsl(var(--color-foreground-secondary))]">
-                    {userRole === "ADMIN" ? "Admin" : userRole === "MANAGER" ? "Manager" : "Employee"}
-                  </div>
-                </div>
-                <ChevronDown className="w-4 h-4 text-[hsl(var(--color-foreground-muted))]" />
-              </button>
-
-              {/* User Menu Dropdown */}
-              {userMenuOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setUserMenuOpen(false)}
-                  />
-                  <div className="absolute right-0 top-full mt-2 bg-[hsl(var(--color-card))] shadow-xl border border-[hsl(var(--color-border))] rounded-2xl z-20 w-56 overflow-hidden">
-                    <div className="py-2">
-                      <div className="px-4 py-3 border-b border-[hsl(var(--color-border))]">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-[hsl(var(--color-primary))] to-[hsl(var(--color-primary-hover))] rounded-full flex items-center justify-center">
-                            <span className="text-white font-semibold">{userInitials}</span>
-                          </div>
-                          <div>
-                            <div className="text-sm font-semibold text-[hsl(var(--color-foreground))]">{userName}</div>
-                            <div className="text-xs text-[hsl(var(--color-foreground-secondary))]">{userEmail}</div>
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          navigate("/profile");
-                          setUserMenuOpen(false);
-                        }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[hsl(var(--color-foreground-secondary))] hover:bg-[hsl(var(--color-surface-elevated))] transition-colors"
-                      >
-                        <User className="w-4 h-4" />
-                        Profile Settings
-                      </button>
-                      <div className="border-t border-[hsl(var(--color-border))] my-1"></div>
-                      <button
-                        onClick={handleLogout}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[hsl(var(--color-error))] hover:bg-[hsl(var(--color-error-soft))] transition-colors"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        Logout
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+  const userRole = (localStorage.getItem("userRole") || "user").toLowerCase();
+  const roleLabel = { admin: "Administrator", manager: "Manager", master: "Platform admin", user: "Team member" }[userRole] || "Team member";
+  const initials = userName.split(" ").filter(Boolean).map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+  const profilePath = role === "employee" ? "/user/profile" : "/profile";
+  useEffect(() => {
+    const key = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setSearchOpen((open) => !open); }
+      if (event.key === "Escape") setUserMenuOpen(false);
+    };
+    const outside = (event) => { if (!menuRef.current?.contains(event.target)) setUserMenuOpen(false); };
+    document.addEventListener("keydown", key);
+    document.addEventListener("pointerdown", outside);
+    return () => { document.removeEventListener("keydown", key); document.removeEventListener("pointerdown", outside); };
+  }, []);
+  const matches = routes.filter((route) => route.label.toLowerCase().includes(query.toLowerCase()));
+  return <>
+    <header className="workspace-topbar">
+      <div className="topbar-leading"><button type="button" className="icon-button mobile-menu-toggle" onClick={onToggleSidebar} aria-label="Open navigation" aria-expanded={sidebarOpen} aria-controls="workspace-navigation"><Menu size={20} /></button>
+        <div className="workspace-breadcrumb"><span>{role === "master" ? "Platform" : role === "employee" ? "My workspace" : "Workspace"}</span><ChevronRight size={13} /><strong>{current?.label || (pathname.includes("password") ? "Password & security" : "My profile")}</strong></div>
+      </div>
+      <div className="topbar-actions">
+        <button type="button" className="workspace-search" onClick={() => { setQuery(""); setSearchOpen(true); }} aria-label="Search pages"><Search size={16} /><span>Jump to…</span><kbd><Command size={11} /> K</kbd></button>
+        <ThemeToggle />
+        {role !== "master" && <NotificationBell />}
+        <span className="topbar-divider" />
+        <div className="relative" ref={menuRef}>
+          <button type="button" onClick={() => setUserMenuOpen((open) => !open)} className="account-trigger" aria-label="Account menu" aria-expanded={userMenuOpen}>
+            <span className="account-avatar">{initials}</span><span className="account-label"><strong>{userName}</strong><span>{roleLabel}</span></span><ChevronDown size={14} className="account-chevron" />
+          </button>
+          {userMenuOpen && <div className="account-menu glass">
+            <div className="account-menu-heading"><strong>{userName}</strong><span>{userEmail}</span></div>
+            {role !== "master" && <Link to={profilePath} onClick={() => setUserMenuOpen(false)}><UserRound size={16} />My profile<ArrowUpRight size={14} className="ml-auto" /></Link>}
+            <button type="button" onClick={() => { clearSession(); navigate("/login", { replace: true }); }}><LogOut size={16} />Sign out</button>
+          </div>}
         </div>
       </div>
-    </nav>
-  );
+    </header>
+    {searchOpen && <div className="command-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) closeSearch(); }}>
+      <section className="command-dialog" ref={searchRef} role="dialog" aria-modal="true" aria-label="Jump to a page" tabIndex={-1}>
+        <div className="command-input"><Search size={20} /><input autoFocus placeholder="Where would you like to go?" aria-label="Search pages" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && matches[0]) { navigate(matches[0].to); closeSearch(); } }} /><button className="icon-button" onClick={closeSearch} aria-label="Close search"><X size={18} /></button></div>
+        <div className="command-results"><p className="eyebrow">PAGES</p>{matches.map(({ to, label, icon: Icon }) => <Link key={to} to={to} onClick={closeSearch}><Icon size={18} />{label}<ArrowUpRight size={15} /></Link>)}{!matches.length && <p className="command-empty">No pages found. Try another name.</p>}</div>
+        <div className="command-footer">Find your way around your workspace <kbd>esc to close</kbd></div>
+      </section>
+    </div>}
+  </>;
 }

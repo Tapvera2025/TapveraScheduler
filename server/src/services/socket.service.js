@@ -12,6 +12,7 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const config = require('../config');
 const logger = require('../utils/logger');
+const Employee = require('../models/Employee');
 
 class SocketService {
   constructor() {
@@ -45,7 +46,7 @@ class SocketService {
 
         // Verify JWT token
         const decoded = jwt.verify(token, config.auth.jwtSecret);
-        socket.userId = decoded.id;
+        socket.userId = decoded.userId;
         socket.userRole = decoded.role;
         socket.companyId = decoded.companyId;
 
@@ -74,7 +75,7 @@ class SocketService {
    * Handle new socket connection
    * @param {Object} socket - Socket instance
    */
-  handleConnection(socket) {
+  async handleConnection(socket) {
     const { userId, userRole, companyId } = socket;
 
     // Store user connection
@@ -83,14 +84,32 @@ class SocketService {
     // Join user-specific room
     socket.join(`user:${userId}`);
 
-    // Join company-wide room
-    if (companyId) {
+    // A master admin belongs to no organisation, so it joins no company rooms
+    if (userRole !== 'MASTER' && companyId) {
       socket.join(`company:${companyId}`);
-    }
 
-    // Join role-based rooms
-    if (userRole === 'admin' || userRole === 'manager') {
-      socket.join(`managers:${companyId}`);
+      // Roles on the token are upper case
+      if (userRole === 'ADMIN' || userRole === 'MANAGER') {
+        socket.join(`managers:${companyId}`);
+      }
+
+      // Shift notifications are addressed by employee id, which is not the same
+      // as the user id, so employees join a room keyed by their employee record
+      try {
+        const employee = await Employee.findOne({ userId, companyId })
+          .select('_id')
+          .lean();
+
+        if (employee) {
+          socket.employeeId = String(employee._id);
+          socket.join(`employee:${socket.employeeId}`);
+        }
+      } catch (error) {
+        logger.error('Could not resolve the employee record for a socket', {
+          userId,
+          error: error.message,
+        });
+      }
     }
 
     logger.info('User connected to socket', {
@@ -224,7 +243,7 @@ class SocketService {
     // Notify assigned employees
     if (Array.isArray(assignedTo)) {
       assignedTo.forEach((employeeId) => {
-        this.io.to(`user:${employeeId}`).emit('shift-created', notification);
+        this.io.to(`employee:${employeeId}`).emit('shift-created', notification);
       });
     }
 
@@ -256,7 +275,7 @@ class SocketService {
     // Notify assigned employees
     if (Array.isArray(assignedTo)) {
       assignedTo.forEach((employeeId) => {
-        this.io.to(`user:${employeeId}`).emit('shift-updated', notification);
+        this.io.to(`employee:${employeeId}`).emit('shift-updated', notification);
       });
     }
 
@@ -288,7 +307,7 @@ class SocketService {
     // Notify assigned employees
     if (Array.isArray(assignedTo)) {
       assignedTo.forEach((employeeId) => {
-        this.io.to(`user:${employeeId}`).emit('shift-deleted', notification);
+        this.io.to(`employee:${employeeId}`).emit('shift-deleted', notification);
       });
     }
 
@@ -374,6 +393,57 @@ class SocketService {
     });
 
     logger.info('Company broadcast sent', { companyId, type: notification.type });
+  }
+
+  // ==========================================
+  // ADHOC SHIFT REQUEST EVENTS
+  // ==========================================
+
+  /**
+   * An employee has asked for an adhoc shift — tell whoever can approve it.
+   */
+  notifyAdhocRequested({ companyId, employeeName, siteName, shiftId }) {
+    if (!this.io) return;
+
+    this.io.to(`managers:${companyId}`).emit('notification', {
+      type: 'ADHOC_REQUESTED',
+      title: 'Adhoc shift requested',
+      message: `${employeeName} has requested an adhoc shift at ${siteName}`,
+      data: { shiftId },
+      timestamp: new Date(),
+    });
+
+    logger.info('Adhoc request notification sent', { companyId, shiftId });
+  }
+
+  /**
+   * A request has been approved or rejected — tell the employee, and the
+   * managers so a second reviewer sees it is already handled.
+   */
+  notifyAdhocReviewed({ companyId, employeeId, approved, note, shift }) {
+    if (!this.io) return;
+
+    const notification = {
+      type: approved ? 'ADHOC_APPROVED' : 'ADHOC_REJECTED',
+      title: approved ? 'Adhoc shift approved' : 'Adhoc shift declined',
+      message: approved
+        ? 'Your adhoc shift request has been approved'
+        : 'Your adhoc shift request has been declined',
+      data: { shiftId: shift?._id ? String(shift._id) : undefined, note },
+      timestamp: new Date(),
+    };
+
+    if (employeeId) {
+      this.io.to(`employee:${employeeId}`).emit('notification', notification);
+    }
+
+    this.io.to(`managers:${companyId}`).emit('notification', notification);
+
+    logger.info('Adhoc decision notification sent', {
+      companyId,
+      employeeId,
+      approved,
+    });
   }
 
   // ==========================================

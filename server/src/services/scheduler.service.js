@@ -128,6 +128,10 @@ class SchedulerService {
         $gte: new Date(startDate),
         $lte: new Date(endDate),
       },
+      // Adhoc requests awaiting a decision are not rostered work yet; they live
+      // in the approval queue instead. null covers regular shifts and any row
+      // created before adhoc approval existed.
+      approvalStatus: { $in: [null, 'APPROVED'] },
     };
 
     if (employeeId) {
@@ -467,11 +471,15 @@ class SchedulerService {
       date: data.date,
     });
 
-    // Create adhoc shift
+    // Create adhoc shift. An admin creating one is also approving it — employee
+    // requests go through adhocShift.service.js and start as PENDING.
     const shift = await Shift.create({
       ...data,
       companyId,
       createdBy: userId,
+      approvalStatus: 'APPROVED',
+      reviewedBy: userId,
+      reviewedAt: new Date(),
     });
 
     // Populate and return

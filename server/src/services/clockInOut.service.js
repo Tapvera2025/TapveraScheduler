@@ -117,6 +117,23 @@ class ClockInOutService {
       throw error;
     }
 
+    // An adhoc shift still waiting on a decision is not work yet
+    if (shiftId && mongoose.Types.ObjectId.isValid(shiftId)) {
+      const shift = await Shift.findOne({ _id: shiftId, companyId })
+        .select('approvalStatus')
+        .lean();
+
+      if (shift && shift.approvalStatus && shift.approvalStatus !== 'APPROVED') {
+        const error = new Error(
+          shift.approvalStatus === 'PENDING'
+            ? 'This adhoc shift has not been approved yet.'
+            : `This adhoc shift was ${shift.approvalStatus.toLowerCase()}.`
+        );
+        error.statusCode = 403;
+        throw error;
+      }
+    }
+
     // Check if employee is already clocked in
     const existingClockIn = await TimeRecord.findOne({
       employeeId,
@@ -264,8 +281,40 @@ class ClockInOutService {
   }
 
   /**
+   * Who may read a given employee's attendance.
+   *
+   * Employees may only read their own record. Managers and admins may read
+   * anyone inside their own organisation (the company predicate on each query
+   * still applies). Fails closed when the caller's identity is unknown, so a
+   * new caller cannot reach another person's records simply by leaving the
+   * actor out of the context.
+   *
+   * @param {Object} context - { companyId, role, userId }
+   * @param {String} employeeId
+   */
+  async assertCanReadEmployee(context, employeeId) {
+    const { companyId, role, userId } = context;
+
+    if (role === 'ADMIN' || role === 'MANAGER') return;
+
+    const denied = () => {
+      const error = new Error('You are not authorised to view this employee\'s records');
+      error.statusCode = 403;
+      return error;
+    };
+
+    if (!role || !userId) throw denied();
+
+    const own = await Employee.findOne({ userId, companyId, isActive: true })
+      .select('_id')
+      .lean();
+
+    if (!own || own._id.toString() !== String(employeeId)) throw denied();
+  }
+
+  /**
    * Get current clock-in status for an employee
-   * @param {Object} context - { companyId }
+   * @param {Object} context - { companyId, role, userId }
    * @param {String} employeeId
    * @returns {Promise<Object|null>} - Active TimeRecord or null
    */
@@ -277,6 +326,8 @@ class ClockInOutService {
       error.statusCode = 400;
       throw error;
     }
+
+    await this.assertCanReadEmployee(context, employeeId);
 
     const timeRecord = await TimeRecord.findOne({
       employeeId,
@@ -293,7 +344,7 @@ class ClockInOutService {
 
   /**
    * Get employee time record history
-   * @param {Object} context - { companyId }
+   * @param {Object} context - { companyId, role, userId }
    * @param {String} employeeId
    * @param {Object} filters - { startDate, endDate, siteId, page, limit }
    * @returns {Promise<Object>} - { records, pagination }
@@ -307,6 +358,8 @@ class ClockInOutService {
       error.statusCode = 400;
       throw error;
     }
+
+    await this.assertCanReadEmployee(context, employeeId);
 
     // Build query
     const query = {

@@ -38,6 +38,9 @@ const {
   logSecurityHeaders,
 } = require('./middleware/security');
 
+const { auth } = require('./middleware/auth');
+const { requireActiveCompany } = require('./middleware/moduleAccess');
+
 const errorHandler = require('./middleware/errorHandler');
 
 // Initialize Express app
@@ -109,8 +112,19 @@ app.use('/health', require('./routes/health'));
 // API v1
 const v1Router = express.Router();
 
-// Mount v1 routes
+// Authentication routes stay reachable without a token (login lives here)
 v1Router.use('/auth', require('./routes/auth.routes'));
+
+// Platform administration. Master admins have no organisation, so this is
+// mounted before the organisation gate below and guards itself.
+v1Router.use('/master', require('./routes/master.routes'));
+
+// -----------------------------------------------------------------
+// Everything below requires a valid token AND a live, non-suspended
+// organisation. Individual routers add their own role and module guards.
+// -----------------------------------------------------------------
+v1Router.use(auth, requireActiveCompany);
+
 v1Router.use('/sites', require('./routes/sites.routes'));
 v1Router.use('/scheduler', require('./routes/scheduler.routes'));
 v1Router.use('/weather', require('./routes/weather.routes'));
@@ -123,6 +137,10 @@ v1Router.use('/clock', require('./routes/clockInOut.routes'));
 v1Router.use('/dashboard', require('./routes/dashboard.routes'));
 v1Router.use('/leave', require('./routes/leave.routes'));
 v1Router.use('/geocoding', require('./routes/geocoding.routes'));
+
+// Voice/text operations agent. Every business action it can take is declared in
+// src/agent/registry.js and passes through the gateway's authorisation checks.
+v1Router.use('/agent', require('./routes/agent.routes'));
 
 // Mount API version
 app.use('/api/v1', v1Router);
@@ -195,6 +213,14 @@ const startServer = async () => {
       logger.info(`✓ Server running on ${config.app.url}`);
       logger.info(`✓ Client URL: ${config.client.url}`);
       logger.info(`✓ Socket.IO enabled for real-time updates`);
+
+      // Say this out loud at boot. A planner that is silently unconfigured looks
+      // identical to one that is broken, and the difference is one env var.
+      logger.info(
+        config.agent.enabled
+          ? `✓ Agent planner ready (${config.agent.model})`
+          : '○ Agent planner disabled - no XAI_API_KEY loaded. The assistant will only accept the typed form.'
+      );
 
       if (config.isDevelopment()) {
         logger.info('🔥 Development mode enabled');

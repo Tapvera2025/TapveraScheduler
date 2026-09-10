@@ -1,7 +1,9 @@
+import Modal from "../ui/Modal";
 import { useState, useEffect } from "react";
 import { X, Calendar, MapPin, User, Clock, Trash2, RotateCcw } from "lucide-react";
 import { shiftApi } from "../../lib/api";
 import toast from "react-hot-toast";
+import { formatDate as orgDate, formatTime as orgTime } from "../../lib/format";
 
 export default function ViewDeletedShiftsModal({ onClose, siteId }) {
   const [deletedShifts, setDeletedShifts] = useState([]);
@@ -55,35 +57,22 @@ export default function ViewDeletedShiftsModal({ onClose, siteId }) {
     }
   };
 
-  const formatDate = (date) => {
-    return new Date(date).toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  };
+  const formatDate = (date) => orgDate(date, "N/A");
 
-  const formatTime = (time) => {
-    if (!time) return "N/A";
-    return new Date(time).toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  const formatTime = (time) => orgTime(time, "N/A");
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-[hsl(var(--color-card))] rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+    <Modal onClose={onClose} label="Deleted shifts">
+      <div className="modal-surface modal-responsive w-full max-w-5xl max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[hsl(var(--color-border))]">
+        <div className="modal-header flex items-center justify-between px-6 py-4 border-b">
           <div className="flex items-center gap-2">
-            <Trash2 className="w-5 h-5 text-red-500" />
+            <Trash2 className="w-5 h-5 text-[hsl(var(--color-error))]" />
             <h2 className="text-xl font-semibold text-[hsl(var(--color-foreground))]">
               Deleted Shifts
             </h2>
           </div>
-          <button
+          <button type="button" aria-label="Close dialog"
             onClick={onClose}
             className="p-2 hover:bg-[hsl(var(--color-surface-elevated))] rounded-lg transition-colors"
           >
@@ -95,7 +84,7 @@ export default function ViewDeletedShiftsModal({ onClose, siteId }) {
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[hsl(var(--color-info))]"></div>
             </div>
           ) : deletedShifts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -118,7 +107,7 @@ export default function ViewDeletedShiftsModal({ onClose, siteId }) {
                     {/* Shift Info */}
                     <div className="flex-1 space-y-3">
                       <div className="flex items-start gap-3">
-                        <Calendar className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                        <Calendar className="w-5 h-5 text-[hsl(var(--color-info))] mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
                           <p className="text-sm font-medium text-[hsl(var(--color-foreground))]">
                             {formatDate(shift.date)}
@@ -130,7 +119,7 @@ export default function ViewDeletedShiftsModal({ onClose, siteId }) {
                       </div>
 
                       <div className="flex items-start gap-3">
-                        <MapPin className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                        <MapPin className="w-5 h-5 text-[hsl(var(--color-info))] mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
                           <p className="text-sm font-medium text-[hsl(var(--color-foreground))]">
                             {shift.site?.siteLocationName || "N/A"}
@@ -143,7 +132,7 @@ export default function ViewDeletedShiftsModal({ onClose, siteId }) {
 
                       {shift.employees && shift.employees.length > 0 && (
                         <div className="flex items-start gap-3">
-                          <User className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                          <User className="w-5 h-5 text-[hsl(var(--color-info))] mt-0.5 flex-shrink-0" />
                           <div className="flex-1">
                             <p className="text-sm text-[hsl(var(--color-foreground))]">
                               {shift.employees
@@ -156,9 +145,9 @@ export default function ViewDeletedShiftsModal({ onClose, siteId }) {
 
                       {shift.deletedAt && (
                         <div className="flex items-start gap-3">
-                          <Clock className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+                          <Clock className="w-5 h-5 text-[hsl(var(--color-error))] mt-0.5 flex-shrink-0" />
                           <div className="flex-1">
-                            <p className="text-xs text-red-500">
+                            <p className="text-xs text-[hsl(var(--color-error))]">
                               Deleted on {formatDate(shift.deletedAt)} by{" "}
                               {shift.deletedBy?.firstName} {shift.deletedBy?.lastName}
                             </p>
@@ -172,7 +161,7 @@ export default function ViewDeletedShiftsModal({ onClose, siteId }) {
                       <button
                         onClick={() => handleRestore(shift._id)}
                         disabled={restoring === shift._id}
-                        className="flex-1 md:flex-none px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 md:flex-none px-4 py-2 bg-[hsl(var(--color-success))] text-[hsl(var(--color-success-foreground))] rounded-md hover:bg-[hsl(var(--color-success))] transition-colors flex items-center justify-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <RotateCcw className="w-4 h-4" />
                         {restoring === shift._id ? "Restoring..." : "Restore"}
@@ -180,7 +169,7 @@ export default function ViewDeletedShiftsModal({ onClose, siteId }) {
                       <button
                         onClick={() => handlePermanentDelete(shift._id)}
                         disabled={restoring === shift._id}
-                        className="flex-1 md:flex-none px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors flex items-center justify-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 md:flex-none px-4 py-2 bg-[hsl(var(--color-error))] text-[hsl(var(--color-error-foreground))] rounded-md hover:bg-[hsl(var(--color-error))] transition-colors flex items-center justify-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Trash2 className="w-4 h-4" />
                         Delete Forever
@@ -194,8 +183,8 @@ export default function ViewDeletedShiftsModal({ onClose, siteId }) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[hsl(var(--color-border))]">
-          <button
+        <div className="modal-footer flex items-center justify-end gap-3 px-6 py-4 border-t">
+          <button type="button" aria-label="Close dialog"
             onClick={onClose}
             className="px-4 py-2 bg-[hsl(var(--color-surface-elevated))] text-[hsl(var(--color-foreground))] rounded-md hover:bg-[hsl(var(--color-border))] transition-colors text-sm font-medium"
           >
@@ -203,6 +192,6 @@ export default function ViewDeletedShiftsModal({ onClose, siteId }) {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -25,7 +25,12 @@
     "seed": "node src/scripts/seedDatabase.js",
     "seed:user": "node src/scripts/createTestUser.js",
     "test:login": "node src/scripts/testLogin.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "migrate:hash-passwords": "node src/scripts/hashExistingPasswords.js",
+    "migrate:hash-passwords:dry": "node src/scripts/hashExistingPasswords.js --dry-run",
+    "create:master": "node src/scripts/createMasterUser.js",
+    "reset:password": "node src/scripts/resetPassword.js",
+    "check:planner": "node src/scripts/checkPlanner.js"
   },
   "dependencies": {
     "axios": "^1.13.6",

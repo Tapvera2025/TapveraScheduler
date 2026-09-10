@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { auth, authorize } = require('../middleware/auth');
+const { requireModule } = require('../middleware/moduleAccess');
 const sitesController = require('../controllers/sites.controller');
 const validate = require('../middleware/validate');
 const {
@@ -17,6 +18,9 @@ const {
 
 // All routes require authentication
 router.use(auth);
+
+// Gated behind the 'sites' module
+router.use(requireModule('sites'));
 
 // Sites CRUD routes
 router.get('/', sitesController.getAllSites);

@@ -129,7 +129,7 @@ class EmailService {
    * @returns {Promise<Object>} - Email send result
    */
   async sendWelcomeEmail({ to, name, email, password, role, companyName }) {
-    const subject = `Welcome to ${config.app?.name || 'RosterMechanic'}`;
+    const subject = `Welcome to ${config.app?.name || 'Tapvera Scheduler'}`;
 
     const html = this.getWelcomeEmailTemplate({
       name,
@@ -138,7 +138,7 @@ class EmailService {
       role,
       companyName,
       loginUrl: config.app?.clientUrl || 'http://localhost:5173',
-      appName: config.app?.name || 'RosterMechanic',
+      appName: config.app?.name || 'Tapvera Scheduler',
     });
 
     return this.sendEmail({ to, subject, html });
@@ -161,7 +161,7 @@ class EmailService {
       name,
       resetUrl,
       expiresIn,
-      appName: config.app?.name || 'RosterMechanic',
+      appName: config.app?.name || 'Tapvera Scheduler',
     });
 
     return this.sendEmail({ to, subject, html });
@@ -182,7 +182,7 @@ class EmailService {
       message,
       actionUrl,
       actionText,
-      appName: config.app?.name || 'RosterMechanic',
+      appName: config.app?.name || 'Tapvera Scheduler',
     });
 
     return this.sendEmail({ to, subject, html });
@@ -215,7 +215,7 @@ class EmailService {
       notes,
       isAdhoc,
       loginUrl: config.app?.clientUrl || 'http://localhost:5173',
-      appName: config.app?.name || 'RosterMechanic',
+      appName: config.app?.name || 'Tapvera Scheduler',
     });
 
     return this.sendEmail({ to, subject, html });
@@ -233,14 +233,14 @@ class EmailService {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Welcome to ${appName}</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f7f6f3;">
   <table role="presentation" style="width: 100%; border-collapse: collapse;">
     <tr>
       <td align="center" style="padding: 40px 0;">
-        <table role="presentation" style="width: 600px; border-collapse: collapse; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+        <table role="presentation" style="width: 100%; max-width: 600px; border-collapse: collapse; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
           <!-- Header -->
           <tr>
-            <td style="padding: 40px 30px; background-color: #2563eb; text-align: center;">
+            <td style="padding: 40px 30px; background-color: #a44d28; text-align: center;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px;">Welcome to ${appName}</h1>
             </td>
           </tr>
@@ -258,12 +258,12 @@ class EmailService {
               <!-- Credentials Box -->
               <table role="presentation" style="width: 100%; border-collapse: collapse; margin: 30px 0;">
                 <tr>
-                  <td style="padding: 25px; background-color: #f8fafc; border-left: 4px solid #2563eb; border-radius: 4px;">
+                  <td style="padding: 25px; background-color: #f5f3ef; border-left: 4px solid #a44d28; border-radius: 4px;">
                     <p style="margin: 0 0 10px 0; color: #666666; font-size: 14px;">
                       <strong style="color: #333333;">Email:</strong> ${email}
                     </p>
                     <p style="margin: 0 0 10px 0; color: #666666; font-size: 14px;">
-                      <strong style="color: #333333;">Temporary Password:</strong> <code style="padding: 2px 6px; background-color: #e5e7eb; border-radius: 3px; font-family: monospace;">${password}</code>
+                      <strong style="color: #333333;">Temporary Password:</strong> <code style="padding: 2px 6px; background-color: #e4dfd8; border-radius: 3px; font-family: monospace;">${password}</code>
                     </p>
                     <p style="margin: 0; color: #666666; font-size: 14px;">
                       <strong style="color: #333333;">Role:</strong> ${role}
@@ -272,14 +272,14 @@ class EmailService {
                 </tr>
               </table>
 
-              <p style="margin: 0 0 30px 0; color: #ef4444; font-size: 14px; padding: 15px; background-color: #fef2f2; border-left: 4px solid #ef4444; border-radius: 4px;">
+              <p style="margin: 0 0 30px 0; color: #ef4444; font-size: 14px; padding: 15px; background-color: #fbefee; border-left: 4px solid #ef4444; border-radius: 4px;">
                 <strong>Important:</strong> Please change your password after your first login for security purposes.
               </p>
 
               <!-- Login Button -->
               <table role="presentation" style="margin: 0 auto;">
                 <tr>
-                  <td style="border-radius: 4px; background-color: #2563eb;">
+                  <td style="border-radius: 4px; background-color: #a44d28;">
                     <a href="${loginUrl}" target="_blank" style="display: inline-block; padding: 14px 40px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: bold;">
                       Login to Your Account
                     </a>
@@ -295,7 +295,7 @@ class EmailService {
 
           <!-- Footer -->
           <tr>
-            <td style="padding: 30px; background-color: #f8fafc; text-align: center; border-top: 1px solid #e5e7eb;">
+            <td style="padding: 30px; background-color: #f5f3ef; text-align: center; border-top: 1px solid #e4dfd8;">
               <p style="margin: 0; color: #999999; font-size: 12px;">
                 This is an automated message from ${appName}. Please do not reply to this email.
               </p>
@@ -322,13 +322,13 @@ class EmailService {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Password Reset Request</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f7f6f3;">
   <table role="presentation" style="width: 100%; border-collapse: collapse;">
     <tr>
       <td align="center" style="padding: 40px 0;">
-        <table role="presentation" style="width: 600px; border-collapse: collapse; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+        <table role="presentation" style="width: 100%; max-width: 600px; border-collapse: collapse; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
           <tr>
-            <td style="padding: 40px 30px; background-color: #2563eb; text-align: center;">
+            <td style="padding: 40px 30px; background-color: #a44d28; text-align: center;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px;">Password Reset</h1>
             </td>
           </tr>
@@ -343,7 +343,7 @@ class EmailService {
 
               <table role="presentation" style="margin: 30px auto;">
                 <tr>
-                  <td style="border-radius: 4px; background-color: #2563eb;">
+                  <td style="border-radius: 4px; background-color: #a44d28;">
                     <a href="${resetUrl}" target="_blank" style="display: inline-block; padding: 14px 40px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: bold;">
                       Reset Password
                     </a>
@@ -351,14 +351,14 @@ class EmailService {
                 </tr>
               </table>
 
-              <p style="margin: 30px 0 0 0; color: #ef4444; font-size: 14px; padding: 15px; background-color: #fef2f2; border-left: 4px solid #ef4444; border-radius: 4px;">
+              <p style="margin: 30px 0 0 0; color: #ef4444; font-size: 14px; padding: 15px; background-color: #fbefee; border-left: 4px solid #ef4444; border-radius: 4px;">
                 This link will expire in ${expiresIn} minutes. If you didn't request this, please ignore this email.
               </p>
             </td>
           </tr>
 
           <tr>
-            <td style="padding: 30px; background-color: #f8fafc; text-align: center; border-top: 1px solid #e5e7eb;">
+            <td style="padding: 30px; background-color: #f5f3ef; text-align: center; border-top: 1px solid #e4dfd8;">
               <p style="margin: 0; color: #999999; font-size: 12px;">
                 This is an automated message from ${appName}.
               </p>
@@ -385,13 +385,13 @@ class EmailService {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Notification</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f7f6f3;">
   <table role="presentation" style="width: 100%; border-collapse: collapse;">
     <tr>
       <td align="center" style="padding: 40px 0;">
-        <table role="presentation" style="width: 600px; border-collapse: collapse; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+        <table role="presentation" style="width: 100%; max-width: 600px; border-collapse: collapse; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
           <tr>
-            <td style="padding: 40px 30px; background-color: #2563eb; text-align: center;">
+            <td style="padding: 40px 30px; background-color: #a44d28; text-align: center;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px;">${appName}</h1>
             </td>
           </tr>
@@ -405,7 +405,7 @@ class EmailService {
               ${actionUrl && actionText ? `
               <table role="presentation" style="margin: 30px auto;">
                 <tr>
-                  <td style="border-radius: 4px; background-color: #2563eb;">
+                  <td style="border-radius: 4px; background-color: #a44d28;">
                     <a href="${actionUrl}" target="_blank" style="display: inline-block; padding: 14px 40px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: bold;">
                       ${actionText}
                     </a>
@@ -417,7 +417,7 @@ class EmailService {
           </tr>
 
           <tr>
-            <td style="padding: 30px; background-color: #f8fafc; text-align: center; border-top: 1px solid #e5e7eb;">
+            <td style="padding: 30px; background-color: #f5f3ef; text-align: center; border-top: 1px solid #e4dfd8;">
               <p style="margin: 0; color: #999999; font-size: 12px;">
                 This is an automated message from ${appName}.
               </p>
@@ -436,10 +436,10 @@ class EmailService {
    * Get shift assignment email HTML template
    */
   getShiftAssignmentTemplate({ employeeName, siteName, shiftDate, startTime, endTime, shiftType, notes, isAdhoc = false, loginUrl, appName }) {
-    const headerColor = isAdhoc ? '#f97316' : '#10b981'; // Orange for adhoc, green for regular
+    const headerColor = isAdhoc ? '#f97316' : '#30704f'; // Orange for adhoc, green for regular
     const headerTitle = isAdhoc ? 'Adhoc Shift Assignment' : 'New Shift Assignment';
-    const backgroundColor = isAdhoc ? '#fff7ed' : '#f0fdf4'; // Light orange for adhoc, light green for regular
-    const borderColor = isAdhoc ? '#f97316' : '#10b981';
+    const backgroundColor = isAdhoc ? '#fff7ed' : '#edf5ef'; // Light orange for adhoc, light green for regular
+    const borderColor = isAdhoc ? '#f97316' : '#30704f';
 
     return `
 <!DOCTYPE html>
@@ -449,11 +449,11 @@ class EmailService {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${headerTitle}</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f7f6f3;">
   <table role="presentation" style="width: 100%; border-collapse: collapse;">
     <tr>
       <td align="center" style="padding: 40px 0;">
-        <table role="presentation" style="width: 600px; border-collapse: collapse; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+        <table role="presentation" style="width: 100%; max-width: 600px; border-collapse: collapse; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
           <!-- Header -->
           <tr>
             <td style="padding: 40px 30px; background-color: ${headerColor}; text-align: center;">
@@ -484,7 +484,7 @@ class EmailService {
                       <strong style="color: #333333;">Time:</strong> ${startTime} - ${endTime}
                     </p>
                     <p style="margin: 0 0 12px 0; color: #666666; font-size: 15px;">
-                      <strong style="color: #333333;">Shift Type:</strong> <span style="padding: 2px 8px; background-color: #dbeafe; color: #1e40af; border-radius: 3px; font-size: 13px; font-weight: 500;">${shiftType}</span>
+                      <strong style="color: #333333;">Shift Type:</strong> <span style="padding: 2px 8px; background-color: #f8eee7; color: #a44d28; border-radius: 3px; font-size: 13px; font-weight: 500;">${shiftType}</span>
                     </p>
                     ${notes ? `<p style="margin: 12px 0 0 0; padding-top: 12px; border-top: 1px solid #d1fae5; color: #666666; font-size: 14px;">
                       <strong style="color: #333333;">Notes:</strong> ${notes}
@@ -500,7 +500,7 @@ class EmailService {
               <!-- View Roster Button -->
               <table role="presentation" style="margin: 0 auto;">
                 <tr>
-                  <td style="border-radius: 4px; background-color: #10b981;">
+                  <td style="border-radius: 4px; background-color: #30704f;">
                     <a href="${loginUrl}/user/roster" target="_blank" style="display: inline-block; padding: 14px 40px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: bold;">
                       View My Roster
                     </a>
@@ -512,7 +512,7 @@ class EmailService {
 
           <!-- Footer -->
           <tr>
-            <td style="padding: 30px; background-color: #f8fafc; text-align: center; border-top: 1px solid #e5e7eb;">
+            <td style="padding: 30px; background-color: #f5f3ef; text-align: center; border-top: 1px solid #e4dfd8;">
               <p style="margin: 0; color: #999999; font-size: 12px;">
                 This is an automated message from ${appName}. Please do not reply to this email.
               </p>

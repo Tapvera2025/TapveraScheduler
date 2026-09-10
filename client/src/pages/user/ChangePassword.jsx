@@ -51,10 +51,10 @@ export default function ChangePassword() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[hsl(var(--color-background))]">
+    <div className="account-page">
 
       {/* Top Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))]">
+      <div className="account-page-header">
         <div className="flex items-center gap-2">
           <KeyRound className="w-5 h-5 text-[hsl(var(--color-foreground-secondary))]" />
           <h1 className="text-lg font-semibold text-[hsl(var(--color-foreground))]">Change Password</h1>
@@ -62,11 +62,11 @@ export default function ChangePassword() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-auto p-4 sm:p-6">
-        <div className="max-w-lg mx-auto">
-          <div className="bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] rounded-xl p-6">
+      <div className="account-page-main">
+        <div className="account-shell max-w-lg">
+          <div className="account-card">
             <div className="mb-6">
-              <div className="w-12 h-12 bg-[hsl(var(--color-primary))]/15 rounded-xl flex items-center justify-center mb-4">
+              <div className="account-icon">
                 <Lock className="w-6 h-6 text-[hsl(var(--color-primary))]" />
               </div>
               <h2 className="text-lg font-semibold text-[hsl(var(--color-foreground))]">Update your password</h2>
@@ -99,7 +99,7 @@ export default function ChangePassword() {
                     {showOldPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                {errors.oldPassword && <p className="text-red-500 text-xs">{errors.oldPassword}</p>}
+                {errors.oldPassword && <p className="text-[hsl(var(--color-error))] text-xs">{errors.oldPassword}</p>}
               </div>
 
               {/* New Password */}
@@ -124,7 +124,7 @@ export default function ChangePassword() {
                     {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                {errors.newPassword && <p className="text-red-500 text-xs">{errors.newPassword}</p>}
+                {errors.newPassword && <p className="text-[hsl(var(--color-error))] text-xs">{errors.newPassword}</p>}
               </div>
 
               {/* Confirm Password */}
@@ -149,7 +149,7 @@ export default function ChangePassword() {
                     {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                {errors.confirmPassword && <p className="text-red-500 text-xs">{errors.confirmPassword}</p>}
+                {errors.confirmPassword && <p className="text-[hsl(var(--color-error))] text-xs">{errors.confirmPassword}</p>}
               </div>
 
               {/* Submit */}

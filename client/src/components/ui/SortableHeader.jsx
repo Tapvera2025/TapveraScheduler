@@ -28,9 +28,9 @@ export default function SortableHeader({
     >
       <span className="whitespace-nowrap">{label}</span>
       {sortDirection === 'asc' ? (
-        <ArrowUp className="w-3 h-3 text-blue-600" />
+        <ArrowUp className="w-3 h-3 text-[hsl(var(--color-info))]" />
       ) : sortDirection === 'desc' ? (
-        <ArrowDown className="w-3 h-3 text-blue-600" />
+        <ArrowDown className="w-3 h-3 text-[hsl(var(--color-info))]" />
       ) : (
         <ArrowUpDown className="w-3 h-3 opacity-50" />
       )}

@@ -70,6 +70,56 @@ const shiftSchema = new mongoose.Schema(
       index: true,
     },
 
+    // ── Adhoc approval ──────────────────────────────────────────────────────
+    // Only meaningful on adhoc shifts. An adhoc shift an admin creates is
+    // APPROVED on the spot; one an employee requests starts as PENDING and does
+    // not count towards the roster, and cannot be clocked into, until reviewed.
+    // Regular shifts leave this null.
+    approvalStatus: {
+      type: String,
+      enum: {
+        values: ['PENDING', 'APPROVED', 'REJECTED', 'WITHDRAWN'],
+        message: '{VALUE} is not a valid approval status',
+      },
+      default: null,
+      index: true,
+    },
+
+    // The employee's user account, when they requested it themselves
+    requestedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+
+    requestedAt: {
+      type: Date,
+    },
+
+    // The admin or manager who approved or rejected it
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+
+    reviewedAt: {
+      type: Date,
+    },
+
+    reviewNote: {
+      type: String,
+      maxlength: [500, 'Review note cannot exceed 500 characters'],
+      default: '',
+    },
+
+    // Why the employee is asking for the shift
+    requestReason: {
+      type: String,
+      maxlength: [500, 'Reason cannot exceed 500 characters'],
+      default: '',
+    },
+
     notes: {
       type: String,
       maxlength: [1000, 'Notes cannot exceed 1000 characters'],
@@ -186,6 +236,8 @@ shiftSchema.index({ date: 1, startTime: 1, companyId: 1 });
 shiftSchema.index({ status: 1, companyId: 1 });
 shiftSchema.index({ shiftType: 1, companyId: 1 });
 shiftSchema.index({ isAdhoc: 1, companyId: 1 });
+shiftSchema.index({ companyId: 1, approvalStatus: 1, date: 1 });
+shiftSchema.index({ companyId: 1, isAdhoc: 1, approvalStatus: 1 });
 
 // Geospatial index for location-based queries
 shiftSchema.index({ 'clockInLocation': '2dsphere' });

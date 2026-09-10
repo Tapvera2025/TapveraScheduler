@@ -1,3 +1,4 @@
+import ResponsiveTable from "../ui/ResponsiveTable";
 import { useState, useEffect, useCallback } from "react";
 import { Plane, RotateCw, Maximize2, ChevronLeft, ChevronRight, XCircle, CheckCircle, AlertCircle } from "lucide-react";
 import { Button } from "../ui/Button";
@@ -12,10 +13,10 @@ const TYPE_LABELS = {
 };
 
 const STATUS_STYLES = {
-  pending:   "bg-yellow-100 text-yellow-800",
-  approved:  "bg-green-100 text-green-800",
-  declined:  "bg-red-100 text-red-800",
-  cancelled: "bg-gray-100 text-gray-600",
+  pending:   "bg-[hsl(var(--color-warning-soft))] text-[hsl(var(--color-warning))]",
+  approved:  "bg-[hsl(var(--color-success-soft))] text-[hsl(var(--color-success))]",
+  declined:  "bg-[hsl(var(--color-error-soft))] text-[hsl(var(--color-error))]",
+  cancelled: "bg-[hsl(var(--color-surface-elevated))] text-[hsl(var(--color-foreground-secondary))]",
 };
 
 const fmt = (d) =>
@@ -54,9 +55,9 @@ export default function LeaveRequestsWidget() {
   }, [fetchData]);
 
   const statCards = [
-    { label: "Awaiting",  value: stats.pending,  icon: AlertCircle,  color: "text-yellow-600" },
-    { label: "Approved",  value: stats.approved, icon: CheckCircle,  color: "text-green-600" },
-    { label: "Declined",  value: stats.declined, icon: XCircle,      color: "text-red-600" },
+    { label: "Awaiting",  value: stats.pending,  icon: AlertCircle,  color: "text-[hsl(var(--color-warning))]" },
+    { label: "Approved",  value: stats.approved, icon: CheckCircle,  color: "text-[hsl(var(--color-success))]" },
+    { label: "Declined",  value: stats.declined, icon: XCircle,      color: "text-[hsl(var(--color-error))]" },
   ];
 
   const columns = ["Requested By", "Type", "Date Submitted", "Period", "Status", "Actioned By"];
@@ -66,7 +67,7 @@ export default function LeaveRequestsWidget() {
       {/* Header */}
       <div className="bg-[hsl(var(--color-card))] border-b border-[hsl(var(--color-border))] px-5 py-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Plane className="w-5 h-5 text-blue-500" />
+          <Plane className="w-5 h-5 text-[hsl(var(--color-primary))]" />
           <h3 className="text-base font-bold text-[hsl(var(--color-foreground))]">Leave Requests</h3>
         </div>
         <div className="flex items-center gap-2">
@@ -111,11 +112,11 @@ export default function LeaveRequestsWidget() {
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-[hsl(var(--color-surface-elevated))] border-b border-[hsl(var(--color-border))]">
-            <tr>
+        <ResponsiveTable className="w-full">
+          <thead role="rowgroup" className="bg-[hsl(var(--color-surface-elevated))] border-b border-[hsl(var(--color-border))]">
+            <tr role="row">
               {columns.map((col) => (
-                <th
+                <th role="columnheader" scope="col"
                   key={col}
                   className="px-4 py-3 text-left text-xs font-medium text-[hsl(var(--color-foreground-secondary))] uppercase tracking-wider whitespace-nowrap"
                 >
@@ -124,16 +125,16 @@ export default function LeaveRequestsWidget() {
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             {loading ? (
-              <tr>
-                <td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-[hsl(var(--color-foreground-secondary))]">
+              <tr role="row">
+                <td role="cell" colSpan={columns.length} className="px-4 py-10 text-center text-sm text-[hsl(var(--color-foreground-secondary))]">
                   Loading...
                 </td>
               </tr>
             ) : leaveRequests.length === 0 ? (
-              <tr>
-                <td colSpan={columns.length} className="px-4 py-12 text-center text-sm text-[hsl(var(--color-foreground-muted))]">
+              <tr role="row">
+                <td role="cell" colSpan={columns.length} className="px-4 py-12 text-center text-sm text-[hsl(var(--color-foreground-muted))]">
                   No leave requests found
                 </td>
               </tr>
@@ -144,25 +145,25 @@ export default function LeaveRequestsWidget() {
                 const actionedBy = req.actionedBy?.name || "—";
                 const period = `${fmt(req.startDate)} → ${fmt(req.endDate)}`;
                 return (
-                  <tr key={req._id} className="border-t border-[hsl(var(--color-border))] hover:bg-[hsl(var(--color-surface-elevated))]">
-                    <td className="px-4 py-3 text-sm font-medium text-[hsl(var(--color-foreground))] whitespace-nowrap">
+                  <tr role="row" key={req._id} className="border-t border-[hsl(var(--color-border))] hover:bg-[hsl(var(--color-surface-elevated))]">
+                    <td role="cell" data-label="Employee" data-field="title" className="px-4 py-3 text-sm font-medium text-[hsl(var(--color-foreground))] whitespace-nowrap">
                       {employeeName}
                     </td>
-                    <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
+                    <td role="cell" data-label="Leave type" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
                       {TYPE_LABELS[req.leaveType] || req.leaveType}
                     </td>
-                    <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
+                    <td role="cell" data-label="Submitted" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
                       {fmt(req.createdAt)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
+                    <td role="cell" data-label="Period" data-field="wide" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
                       {period}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLES[req.status] || "bg-gray-100 text-gray-600"}`}>
+                    <td role="cell" data-label="Status" data-field="status" className="px-4 py-3 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLES[req.status] || "bg-[hsl(var(--color-surface-elevated))] text-[hsl(var(--color-foreground-secondary))]"}`}>
                         {req.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
+                    <td role="cell" data-label="Actioned by" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground))] whitespace-nowrap">
                       {actionedBy}
                     </td>
                   </tr>
@@ -170,7 +171,7 @@ export default function LeaveRequestsWidget() {
               })
             )}
           </tbody>
-        </table>
+        </ResponsiveTable>
       </div>
 
       {/* Pagination */}

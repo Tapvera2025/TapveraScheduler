@@ -15,7 +15,7 @@ const RadioGroupItem = React.forwardRef(({ className, children, id, ...props }, 
       <input
         type="radio"
         className={cn(
-          "h-4 w-4 rounded-full border border-gray-300 text-gray-900 focus:ring-2 focus:ring-gray-950 focus:ring-offset-2",
+          "h-4 w-4 rounded-full border border-[hsl(var(--color-border))] text-[hsl(var(--color-foreground))] focus:ring-2 focus:ring-[hsl(var(--color-ring))] focus:ring-offset-2",
           className
         )}
         id={id}

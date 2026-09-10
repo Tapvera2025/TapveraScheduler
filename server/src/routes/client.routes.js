@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { auth, authorize } = require('../middleware/auth');
+const { requireModule } = require('../middleware/moduleAccess');
 const clientController = require('../controllers/client.controller');
 const validate = require('../middleware/validate');
 const {
@@ -13,6 +14,9 @@ const {
 
 // All routes require authentication
 router.use(auth);
+
+// Gated behind the 'clients' module
+router.use(requireModule('clients'));
 
 // Clients CRUD routes
 router.get('/', clientController.getAllClients);

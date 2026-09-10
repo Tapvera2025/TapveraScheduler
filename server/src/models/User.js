@@ -10,6 +10,7 @@ const config = require('../config');
 const softDeletePlugin = require('./plugins/softDelete');
 const auditLogPlugin = require('./plugins/auditLog');
 const multiTenantPlugin = require('./plugins/multiTenant');
+const logger = require('../utils/logger');
 
 const userSchema = new mongoose.Schema(
   {
@@ -39,7 +40,8 @@ const userSchema = new mongoose.Schema(
     role: {
       type: String,
       enum: {
-        values: ['ADMIN', 'MANAGER', 'USER'],
+        // MASTER sits above organisations and has no companyId
+        values: ['MASTER', 'ADMIN', 'MANAGER', 'USER'],
         message: '{VALUE} is not a valid role',
       },
       default: 'USER',
@@ -85,33 +87,79 @@ const userSchema = new mongoose.Schema(
 // Apply plugins
 userSchema.plugin(softDeletePlugin);
 userSchema.plugin(auditLogPlugin);
-userSchema.plugin(multiTenantPlugin);
+// A MASTER user belongs to no organisation, so companyId is required for
+// everyone else only
+userSchema.plugin(multiTenantPlugin, {
+  required: function () {
+    return this.role !== 'MASTER';
+  },
+});
 
 // Hash password before saving
-// TEMPORARILY DISABLED FOR DEVELOPMENT - UNCOMMENT FOR PRODUCTION
-// userSchema.pre('save', async function () {
-//   // Only hash if password is modified
-//   if (!this.isModified('password')) return;
+userSchema.pre('save', async function () {
+  // Only hash if password is modified
+  if (!this.isModified('password')) return;
 
-//   // Hash password
-//   const salt = await bcrypt.genSalt(config.auth.bcryptSaltRounds);
-//   this.password = await bcrypt.hash(this.password, salt);
+  // Hash password
+  const salt = await bcrypt.genSalt(config.auth.bcryptSaltRounds);
+  this.password = await bcrypt.hash(this.password, salt);
 
-//   // Set passwordChangedAt
-//   if (!this.isNew) {
-//     this.passwordChangedAt = Date.now() - 1000; // Subtract 1s to ensure token is created after password change
-//   }
-// });
+  // Set passwordChangedAt (1s in the past so any token issued right after is valid)
+  if (!this.isNew) {
+    this.passwordChangedAt = Date.now() - 1000;
+  }
+});
 
-// Compare password method
-// TEMPORARILY DISABLED FOR DEVELOPMENT - UNCOMMENT FOR PRODUCTION
-// userSchema.methods.comparePassword = async function (candidatePassword) {
-//   return await bcrypt.compare(candidatePassword, this.password);
-// };
+// bcrypt hashes start with $2a$ / $2b$ / $2y$ and are 60 characters long
+const BCRYPT_PATTERN = /^\$2[aby]\$\d{2}\$.{53}$/;
 
-// DEVELOPMENT ONLY: Plain text password comparison (REMOVE IN PRODUCTION!)
+/**
+ * Compare a candidate password against the stored value.
+ *
+ * Normally this is a straight bcrypt comparison. Passwords created before
+ * hashing was enabled are still stored as plain text, so in non-production
+ * environments a matching plain-text password is accepted once and then
+ * re-saved, which hashes it via the pre-save hook. Production never accepts a
+ * plain-text password — run `npm run migrate:hash-passwords` there instead.
+ */
 userSchema.methods.comparePassword = async function (candidatePassword) {
-  return candidatePassword === this.password;
+  if (!candidatePassword || !this.password) return false;
+
+  const stored = this.password;
+
+  // Normal path: the stored value is already a bcrypt hash
+  if (BCRYPT_PATTERN.test(stored)) {
+    return await bcrypt.compare(candidatePassword, stored);
+  }
+
+  // Transitional path: legacy plain-text password
+  if (config.isProduction()) {
+    logger.error('Refused login: password is not hashed', {
+      userId: this._id,
+      hint: 'Run the hashExistingPasswords migration',
+    });
+    return false;
+  }
+
+  if (candidatePassword !== stored) {
+    return false;
+  }
+
+  // Upgrade in place so this only happens once for this user
+  try {
+    this.password = candidatePassword;
+    await this.save();
+    logger.warn('Upgraded a legacy plain-text password to a bcrypt hash', {
+      userId: this._id,
+    });
+  } catch (error) {
+    logger.error('Could not upgrade legacy password to a hash', {
+      userId: this._id,
+      error: error.message,
+    });
+  }
+
+  return true;
 };
 
 // Check if password was changed after JWT was issued

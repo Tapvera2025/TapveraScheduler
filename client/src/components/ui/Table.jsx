@@ -5,7 +5,8 @@ const Table = React.forwardRef(({ className, ...props }, ref) => (
   <div className="relative w-full overflow-auto">
     <table
       ref={ref}
-      className={cn("w-full caption-bottom text-sm", className)}
+      role="table"
+      className={cn("responsive-table w-full caption-bottom text-sm", className)}
       {...props}
     />
   </div>
@@ -15,6 +16,7 @@ Table.displayName = "Table";
 const TableHeader = React.forwardRef(({ className, ...props }, ref) => (
   <thead
     ref={ref}
+    role="rowgroup"
     className={cn("bg-[hsl(var(--color-muted))] border-b border-[hsl(var(--color-border))]", className)}
     {...props}
   />
@@ -24,6 +26,7 @@ TableHeader.displayName = "TableHeader";
 const TableBody = React.forwardRef(({ className, ...props }, ref) => (
   <tbody
     ref={ref}
+    role="rowgroup"
     className={cn("[&_tr:last-child]:border-0", className)}
     {...props}
   />
@@ -45,6 +48,7 @@ TableFooter.displayName = "TableFooter";
 const TableRow = React.forwardRef(({ className, ...props }, ref) => (
   <tr
     ref={ref}
+    role="row"
     className={cn(
       "border-b border-[hsl(var(--color-border))] transition-colors hover:bg-[hsl(var(--color-muted))]/50 data-[state=selected]:bg-[hsl(var(--color-muted))]",
       className
@@ -57,6 +61,8 @@ TableRow.displayName = "TableRow";
 const TableHead = React.forwardRef(({ className, ...props }, ref) => (
   <th
     ref={ref}
+    role="columnheader"
+    scope="col"
     className={cn(
       "h-11 px-4 text-left align-middle font-semibold text-[hsl(var(--color-foreground-secondary))] uppercase text-xs tracking-wide [&:has([role=checkbox])]:pr-0",
       className
@@ -69,6 +75,7 @@ TableHead.displayName = "TableHead";
 const TableCell = React.forwardRef(({ className, ...props }, ref) => (
   <td
     ref={ref}
+    role="cell"
     className={cn(
       "p-4 align-middle [&:has([role=checkbox])]:pr-0 text-[hsl(var(--color-foreground))]",
       className

@@ -160,10 +160,31 @@ const hppProtection = hpp({
 });
 
 /**
- * CORS Configuration (allow all origins)
+ * CORS Configuration
+ *
+ * Origins come from the CORS_ORIGIN env var (comma-separated for multiple).
+ * Requests with no Origin header (server-to-server, curl, health checks) are
+ * allowed through; browser requests must match the allow-list.
  */
+const allowedOrigins = String(config.cors.origin || '')
+  .split(',')
+  .map((origin) => origin.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
 const corsOptions = {
-  origin: true, // Allow all origins
+  origin: (origin, callback) => {
+    // Non-browser clients send no Origin header
+    if (!origin) return callback(null, true);
+
+    const normalised = origin.replace(/\/$/, '');
+
+    if (allowedOrigins.includes(normalised)) {
+      return callback(null, true);
+    }
+
+    logger.warn('Blocked CORS request from disallowed origin', { origin });
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
   optionsSuccessStatus: 200,
 };

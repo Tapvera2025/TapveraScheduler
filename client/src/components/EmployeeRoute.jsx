@@ -15,6 +15,11 @@ export default function EmployeeRoute({ children }) {
     return <Navigate to="/login" replace />;
   }
 
+  // Master admins belong in the platform panel
+  if (userRole === "master") {
+    return <Navigate to="/master" replace />;
+  }
+
   // If authenticated but is admin/manager, redirect to admin dashboard
   if (userRole === "admin" || userRole === "manager") {
     return <Navigate to="/dashboard" replace />;

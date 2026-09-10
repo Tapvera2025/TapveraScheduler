@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { User, Mail, Shield, LogOut, Edit2, X, Check, Calendar, KeyRound } from "lucide-react";
 import { userApi } from "../lib/api";
 import toast from "react-hot-toast";
+import { formatDate as orgDate } from "../lib/format";
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -104,10 +105,10 @@ export default function Profile() {
   const roleInfo = getRoleDisplay(profile?.role);
 
   return (
-    <div className="min-h-screen bg-[hsl(var(--color-background))] py-6 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
+    <div className="profile-page">
+      <div className="profile-shell max-w-4xl">
         {/* Header */}
-        <div className="mb-6">
+        <div className="profile-heading">
           <h1 className="text-2xl sm:text-3xl font-bold text-[hsl(var(--color-foreground))]">Profile Settings</h1>
           <p className="mt-1 text-sm text-[hsl(var(--color-foreground-secondary))]">
             Manage your account information and preferences
@@ -115,19 +116,19 @@ export default function Profile() {
         </div>
 
         {/* Profile Card */}
-        <div className="bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] rounded-xl overflow-hidden shadow-sm">
+        <div className="profile-card">
           {/* Profile Header with Gradient */}
-          <div className="bg-gradient-to-r from-[hsl(var(--color-primary))] to-orange-600 px-6 sm:px-8 py-8 sm:py-10">
+          <div className="profile-hero">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-center space-x-4 sm:space-x-5">
-                <div className="w-20 h-20 sm:w-24 sm:h-24 bg-white/20 rounded-full flex items-center justify-center border-2 border-white/30 shadow-lg">
-                  <span className="text-white text-2xl sm:text-3xl font-bold">
+                <div className="profile-avatar w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center">
+                  <span className="text-2xl sm:text-3xl font-bold">
                     {profile?.name?.charAt(0).toUpperCase()}
                   </span>
                 </div>
-                <div className="text-white">
+                <div>
                   <h2 className="text-2xl sm:text-3xl font-bold">{profile?.name}</h2>
-                  <p className="text-white/80 text-base sm:text-lg mt-1">
+                  <p className="profile-role text-base sm:text-lg">
                     {roleInfo.title}
                   </p>
                 </div>
@@ -135,7 +136,7 @@ export default function Profile() {
               {!isEditing && (
                 <button
                   onClick={() => setIsEditing(true)}
-                  className="flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors border border-white/30 font-medium text-sm sm:text-base"
+                  className="profile-edit-button flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 font-medium text-sm sm:text-base"
                 >
                   <Edit2 className="w-4 h-4" />
                   Edit Profile
@@ -163,7 +164,7 @@ export default function Profile() {
                     placeholder="Enter your name"
                   />
                 ) : (
-                  <p className="text-[hsl(var(--color-foreground))] text-base sm:text-lg font-medium bg-[hsl(var(--color-surface-elevated))] px-4 py-2.5 sm:py-3 rounded-lg border border-[hsl(var(--color-border))]">
+                  <p className="profile-value text-[hsl(var(--color-foreground))] text-base sm:text-lg font-medium px-4 py-2.5 sm:py-3 rounded-lg border">
                     {profile?.name}
                   </p>
                 )}
@@ -185,7 +186,7 @@ export default function Profile() {
                     placeholder="Enter your email"
                   />
                 ) : (
-                  <p className="text-[hsl(var(--color-foreground))] text-base sm:text-lg font-medium bg-[hsl(var(--color-surface-elevated))] px-4 py-2.5 sm:py-3 rounded-lg border border-[hsl(var(--color-border))]">
+                  <p className="profile-value text-[hsl(var(--color-foreground))] text-base sm:text-lg font-medium px-4 py-2.5 sm:py-3 rounded-lg border">
                     {profile?.email}
                   </p>
                 )}
@@ -213,7 +214,7 @@ export default function Profile() {
                   <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="flex items-center justify-center gap-2 px-6 py-2.5 sm:py-3 bg-[hsl(var(--color-primary))] text-white rounded-lg hover:bg-[hsl(var(--color-primary-hover))] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm font-medium text-sm sm:text-base"
+                    className="flex items-center justify-center gap-2 px-6 py-2.5 sm:py-3 bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] rounded-lg hover:bg-[hsl(var(--color-primary-hover))] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm font-medium text-sm sm:text-base"
                   >
                     <Check className="w-4 h-4 sm:w-5 sm:h-5" />
                     {saving ? "Saving..." : "Save Changes"}
@@ -235,7 +236,7 @@ export default function Profile() {
           <div className="px-6 sm:px-8 py-4 sm:py-5 bg-[hsl(var(--color-surface-elevated))] border-t border-[hsl(var(--color-border))]">
             <button
               onClick={handleLogout}
-              className="flex items-center gap-2 text-red-500 hover:text-red-400 font-semibold transition-colors text-sm sm:text-base"
+              className="flex items-center gap-2 text-[hsl(var(--color-error))] hover:text-[hsl(var(--color-error))] font-semibold transition-colors text-sm sm:text-base"
             >
               <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
               Logout
@@ -253,21 +254,13 @@ export default function Profile() {
             <div className="bg-[hsl(var(--color-surface-elevated))] border border-[hsl(var(--color-border))] px-4 py-3 rounded-lg">
               <span className="text-xs sm:text-sm font-medium text-[hsl(var(--color-foreground-secondary))]">Account Created</span>
               <p className="text-[hsl(var(--color-foreground))] font-semibold mt-1 text-sm sm:text-base">
-                {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString('en-AU', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
-                }) : "N/A"}
+                {orgDate(profile?.createdAt, "N/A")}
               </p>
             </div>
             <div className="bg-[hsl(var(--color-surface-elevated))] border border-[hsl(var(--color-border))] px-4 py-3 rounded-lg">
               <span className="text-xs sm:text-sm font-medium text-[hsl(var(--color-foreground-secondary))]">Last Login</span>
               <p className="text-[hsl(var(--color-foreground))] font-semibold mt-1 text-sm sm:text-base">
-                {profile?.lastLoginAt ? new Date(profile.lastLoginAt).toLocaleDateString('en-AU', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
-                }) : "N/A"}
+                {orgDate(profile?.lastLoginAt, "N/A")}
               </p>
             </div>
           </div>

@@ -8,38 +8,30 @@ export default function ClientRow({ client, onClientClick }) {
   };
 
   return (
-    <tr className="hover:bg-[hsl(var(--color-surface-elevated))] transition-colors">
-      <td className="px-2 sm:px-3 py-2 sm:py-3 text-center sticky left-0 bg-[hsl(var(--color-card))] hover:bg-[hsl(var(--color-surface-elevated))] z-[5]">
-        <input
-          type="checkbox"
-          className="rounded border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))]"
-        />
-      </td>
-
-      <td
+    <tr role="row" className="hover:bg-[hsl(var(--color-surface-elevated))] transition-colors">
+      <td role="cell" data-label="Client" data-field="title"
         className="px-2 sm:px-3 py-2 sm:py-3 text-[hsl(var(--color-primary,220_90%_56%))] hover:underline cursor-pointer whitespace-nowrap"
-        onClick={handleClick}
       >
-        {client.clientName}
+        <button className="record-link" onClick={handleClick}>{client.clientName}</button>
       </td>
 
-      <td className="px-2 sm:px-3 py-2 sm:py-3 text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
+      <td role="cell" data-label="State" className="px-2 sm:px-3 py-2 sm:py-3 text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
         {client.state}
       </td>
 
-      <td className="px-2 sm:px-3 py-2 sm:py-3 text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
+      <td role="cell" data-label="Invoicing company" className="px-2 sm:px-3 py-2 sm:py-3 text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
         {client.invoicingCompany}
       </td>
 
-      <td className="px-2 sm:px-3 py-2 sm:py-3">
+      <td role="cell" data-label="Status" data-field="status" className="px-2 sm:px-3 py-2 sm:py-3">
         <Badge status={client.status} />
       </td>
 
-      <td className="px-2 sm:px-3 py-2 sm:py-3 text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
+      <td role="cell" data-label="Invoice subject" data-field="wide" className="px-2 sm:px-3 py-2 sm:py-3 text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
         {client.invoiceSubject}
       </td>
 
-      <td className="px-2 sm:px-3 py-2 sm:py-3 text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
+      <td role="cell" data-label="Invoice template" data-field="wide" className="px-2 sm:px-3 py-2 sm:py-3 text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
         {client.invoiceTemplate}
       </td>
     </tr>

@@ -1,4 +1,5 @@
-import { useState, useRef } from "react";
+import Modal from "../ui/Modal";
+import { useState } from "react";
 import { X, Plus, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Button } from "../ui/Button";
@@ -6,10 +7,6 @@ import { Input } from "../ui/Input";
 import { clientApi } from "../../lib/api";
 
 export default function AddMultipleClientsModal({ onClose, onSuccess }) {
-  const [isDragging, setIsDragging] = useState(false);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const modalRef = useRef(null);
   const [submitting, setSubmitting] = useState(false);
 
   const [clients, setClients] = useState([
@@ -20,28 +17,7 @@ export default function AddMultipleClientsModal({ onClose, onSuccess }) {
     { id: 5, clientName: "", checked: false },
   ]);
 
-  const handleMouseDown = (e) => {
-    if (e.target.closest(".modal-header")) {
-      setIsDragging(true);
-      setDragStart({
-        x: e.clientX - position.x,
-        y: e.clientY - position.y,
-      });
-    }
-  };
 
-  const handleMouseMove = (e) => {
-    if (isDragging) {
-      setPosition({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y,
-      });
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
 
   const handleAddMoreClients = () => {
     const newId = Math.max(...clients.map((c) => c.id)) + 1;
@@ -103,36 +79,26 @@ export default function AddMultipleClientsModal({ onClose, onSuccess }) {
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center"
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-    >
+    <Modal onClose={onClose} label="Add multiple clients">
       <div
-        ref={modalRef}
-        className="bg-white rounded-lg shadow-2xl w-full max-w-2xl"
-        style={{
-          transform: `translate(${position.x}px, ${position.y}px)`,
-          cursor: isDragging ? "grabbing" : "default",
-        }}
+        className="modal-surface modal-responsive w-full max-w-2xl"
       >
-        {/* Header - Draggable */}
+        {/* Header */}
         <div
-          className="modal-header flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-lg cursor-grab active:cursor-grabbing"
-          onMouseDown={handleMouseDown}
+          className="modal-header flex items-center justify-between px-6 py-4 border-b border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))] rounded-t-lg"
         >
-          <h2 className="text-lg font-semibold text-gray-800">Add Clients</h2>
-          <button
+          <h2 className="text-lg font-semibold text-[hsl(var(--color-foreground))]">Add Clients</h2>
+          <button type="button" aria-label="Close dialog"
             onClick={onClose}
-            className="p-1 hover:bg-gray-200 rounded transition-colors"
+            className="p-1 hover:bg-[hsl(var(--color-surface-elevated))] rounded transition-colors"
           >
-            <X className="w-5 h-5 text-gray-600" />
+            <X className="w-5 h-5 text-[hsl(var(--color-foreground-secondary))]" />
           </button>
         </div>
 
         {/* Content */}
         <div className="p-6 max-h-[70vh] overflow-y-auto">
-          <h3 className="text-sm font-medium text-gray-700 mb-4">Clients</h3>
+          <h3 className="text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-4">Clients</h3>
 
           <div className="space-y-3">
             {clients.map((client, index) => (
@@ -143,11 +109,11 @@ export default function AddMultipleClientsModal({ onClose, onSuccess }) {
                   onChange={(e) =>
                     handleClientChange(client.id, "clientName", e.target.value)
                   }
-                  className={`flex-1 ${index === clients.length - 1 ? "border-blue-400" : ""}`}
+                  className={`flex-1 ${index === clients.length - 1 ? "border-[hsl(var(--color-info))]" : ""}`}
                 />
                 <button
                   onClick={() => handleDeleteClient(client.id)}
-                  className="p-2 text-blue-500 hover:bg-blue-50 rounded transition-colors"
+                  className="p-2 text-[hsl(var(--color-info))] hover:bg-[hsl(var(--color-info-soft))] rounded transition-colors"
                   title="Delete"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -160,7 +126,7 @@ export default function AddMultipleClientsModal({ onClose, onSuccess }) {
           <div className="flex justify-end mt-4">
             <Button
               onClick={handleAddMoreClients}
-              className="bg-pink-600 hover:bg-pink-700 text-white"
+              className="bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))]"
             >
               <Plus className="w-4 h-4 mr-2" />
               Add More Clients
@@ -169,19 +135,19 @@ export default function AddMultipleClientsModal({ onClose, onSuccess }) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+        <div className="modal-footer flex items-center justify-end gap-3 px-6 py-4 border-t">
           <Button variant="outline" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
           <Button
             onClick={handleSave}
             disabled={submitting}
-            className="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'Saving...' : 'Save'}
           </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

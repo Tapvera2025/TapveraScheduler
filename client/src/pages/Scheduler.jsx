@@ -1,3 +1,4 @@
+import ShiftAgenda from "../components/scheduler/ShiftAgenda";
 import { useState, useMemo, useEffect, useRef } from "react";
 import {
   User,
@@ -6,9 +7,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  RotateCw,
-  Upload,
-  Printer,
   Search,
   Clock,
   Phone,
@@ -349,21 +347,25 @@ export default function Scheduler() {
     setIsAdhocModalOpen(true);
   };
 
-  // Handle saving a shift
+  // Handle saving a shift (or multiple shifts when a date range is selected)
   const handleSaveShift = async (shiftData) => {
+    const shiftsToCreate = Array.isArray(shiftData) ? shiftData : [shiftData];
     try {
-      const response = await shiftApi.create(shiftData);
-      toast.success("Shift created successfully");
+      await Promise.all(shiftsToCreate.map((s) => shiftApi.create(s)));
+      toast.success(
+        shiftsToCreate.length > 1
+          ? `${shiftsToCreate.length} shifts created successfully`
+          : "Shift created successfully"
+      );
       setIsModalOpen(false);
 
-      // Refresh shifts only if the created shift is for the currently selected site
-      const createdShift = response.data.data;
-      const createdShiftSiteId =
-        typeof createdShift.siteId === "object"
-          ? createdShift.siteId.id
-          : createdShift.siteId;
+      const createdSiteId = shiftsToCreate[0]?.siteId || null;
+      const normalizedSiteId =
+        createdSiteId && typeof createdSiteId === "object"
+          ? createdSiteId.id
+          : createdSiteId;
 
-      if (selectedSite && createdShiftSiteId === selectedSite) {
+      if (selectedSite && normalizedSiteId === selectedSite) {
         const numDays =
           viewMode === "week"
             ? 7
@@ -381,9 +383,8 @@ export default function Scheduler() {
           toLocalDateStr(endDate),
         );
         setShifts(shiftsResponse.data.data);
-      } else if (createdShiftSiteId) {
-        // If shift was created for a different site, switch to that site
-        setSelectedSite(createdShiftSiteId);
+      } else if (normalizedSiteId) {
+        setSelectedSite(normalizedSiteId);
       }
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to create shift");
@@ -477,21 +478,21 @@ export default function Scheduler() {
   };
 
   const stats = [
-    { label: "Coverage Hrs", value: "0h 0m", color: "bg-green-500" },
-    { label: "Confirmed Hrs", value: "0h 0m", color: "bg-green-500" },
-    { label: "Tentative Hrs", value: "0h 0m", color: "bg-red-500" },
+    { label: "Coverage Hrs", value: "0h 0m", color: "bg-[hsl(var(--color-success))]" },
+    { label: "Confirmed Hrs", value: "0h 0m", color: "bg-[hsl(var(--color-success))]" },
+    { label: "Tentative Hrs", value: "0h 0m", color: "bg-[hsl(var(--color-error))]" },
     {
       label: "Published Shifts",
       value: shifts.filter((s) => s.status === "SCHEDULED").length.toString(),
-      color: "bg-green-500",
+      color: "bg-[hsl(var(--color-success))]",
     },
-    { label: "Unpublished Shifts", value: "0", color: "bg-yellow-500" },
+    { label: "Unpublished Shifts", value: "0", color: "bg-[hsl(var(--color-warning))]" },
     {
       label: "Open Shifts",
       value: shifts.filter((s) => !s.employeeId).length.toString(),
-      color: "bg-red-500",
+      color: "bg-[hsl(var(--color-error))]",
     },
-    { label: "Warnings", value: "0", color: "bg-orange-500" },
+    { label: "Warnings", value: "0", color: "bg-[hsl(var(--color-warning))]" },
   ];
 
   // Get view mode label for select
@@ -537,13 +538,14 @@ export default function Scheduler() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[hsl(var(--color-card))]">
+    <div className="scheduler-page flex flex-col">
       {/* Top Toolbar - Mobile Responsive */}
-      <div className="border-b border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))]">
+      <div className="scheduler-toolbar border-b border-[hsl(var(--color-border))] relative z-40">
         {/* Row 1: Site Selector & View Types (Always visible) */}
         <div className="flex items-center justify-between px-2 sm:px-4 py-2 gap-2 flex-wrap">
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <Select
+              aria-label="Site"
               value={selectedSite}
               onChange={(e) => setSelectedSite(e.target.value)}
               className="w-full sm:w-48 text-sm"
@@ -591,11 +593,11 @@ export default function Scheduler() {
                 setModalData({ employeeId: null, date: new Date().toISOString().split("T")[0] });
                 setIsModalOpen(true);
               }}
-              className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1 text-sm px-2 sm:px-4"
+              className="bg-[hsl(var(--color-primary))] hover:bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] flex items-center gap-1 text-sm px-2 sm:px-4"
               size="sm"
             >
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add Shift</span>
+              <span>Add shift</span>
             </Button>
 
             <Button
@@ -603,20 +605,20 @@ export default function Scheduler() {
                 setAdhocModalData({ employeeId: null, date: new Date().toISOString().split("T")[0] });
                 setIsAdhocModalOpen(true);
               }}
-              className="bg-orange-500 hover:bg-orange-600 text-white flex items-center gap-1 text-sm px-2 sm:px-4"
+              className="bg-[hsl(var(--color-warning))] hover:bg-[hsl(var(--color-warning))] text-[hsl(var(--color-warning-foreground))] flex items-center gap-1 text-sm px-2 sm:px-4"
               size="sm"
             >
               <Zap className="h-4 w-4" />
-              <span className="hidden sm:inline">Adhoc</span>
+              <span>Adhoc</span>
             </Button>
           </div>
         </div>
 
         {/* Row 2: Date Navigation & View Mode */}
-        <div className="flex items-center justify-between px-2 sm:px-4 py-2 gap-2 border-t border-[hsl(var(--color-border))]">
+        <div className="scheduler-date-controls flex items-center justify-between px-2 sm:px-4 py-2 gap-2 border-t border-[hsl(var(--color-border))]">
           {/* Date Navigation */}
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-            <Button variant="outline" size="icon" onClick={handlePreviousPeriod} className="h-8 w-8">
+            <Button variant="outline" size="icon" onClick={handlePreviousPeriod} aria-label="Previous period" className="h-8 w-8">
               <ChevronLeft className="h-4 w-4" />
             </Button>
 
@@ -630,7 +632,7 @@ export default function Scheduler() {
               <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0 text-[hsl(var(--color-foreground-secondary))]" />
             </button>
 
-            <Button variant="outline" size="icon" onClick={handleNextPeriod} className="h-8 w-8">
+            <Button variant="outline" size="icon" onClick={handleNextPeriod} aria-label="Next period" className="h-8 w-8">
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
@@ -638,6 +640,7 @@ export default function Scheduler() {
           {/* View Mode & Actions */}
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
             <Select
+              aria-label="Schedule period"
               value={viewMode}
               onChange={(e) => setViewMode(e.target.value)}
               className="w-20 sm:w-28 text-xs sm:text-sm"
@@ -648,18 +651,6 @@ export default function Scheduler() {
               <option value="4weeks">4 Weeks</option>
             </Select>
 
-            {/* Desktop-only action buttons */}
-            <div className="hidden lg:flex items-center gap-1">
-              <Button variant="outline" size="icon" className="h-8 w-8" title="Refresh">
-                <RotateCw className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="icon" className="h-8 w-8" title="Upload">
-                <Upload className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="icon" className="h-8 w-8" title="Print">
-                <Printer className="h-4 w-4" />
-              </Button>
-            </div>
 
             {/* Options dropdown */}
             <div className="relative" ref={optionsRef}>
@@ -672,28 +663,20 @@ export default function Scheduler() {
 
             {/* Options Dropdown */}
             {optionsOpen && (
-              <div className="absolute right-0 top-full mt-2 w-64 bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] rounded-md shadow-lg z-50">
+              <div className="absolute right-0 top-full mt-2 w-64 bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] rounded-md shadow-lg z-[200]">
                 <div className="py-1">
-                  <button className="w-full text-left px-4 py-2 text-sm text-[hsl(var(--color-foreground))] hover:bg-[hsl(var(--color-surface-elevated))] flex items-center gap-2">
-                    <Grid3x3 className="h-4 w-4 text-blue-600" />
-                    Bulk Create OPEN Shifts
-                  </button>
-                  <button className="w-full text-left px-4 py-2 text-sm text-[hsl(var(--color-foreground))] hover:bg-[hsl(var(--color-surface-elevated))] flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-blue-600" />
-                    Copy Roster to Attendance
-                  </button>
                   <div className="relative">
                     <button
                       onClick={() => setShiftViewOpen(!shiftViewOpen)}
                       className="w-full text-left px-4 py-2 text-sm text-[hsl(var(--color-foreground))] hover:bg-[hsl(var(--color-surface-elevated))] flex items-center gap-2"
                     >
-                      <Grid3x3 className="h-4 w-4 text-blue-600" />
+                      <Grid3x3 className="h-4 w-4 text-[hsl(var(--color-primary))]" />
                       Shift View
                       <ChevronRight className={`ml-auto h-4 w-4 transition-transform ${shiftViewOpen ? 'rotate-90' : ''}`} />
                     </button>
 
                     {shiftViewOpen && (
-                      <div className="absolute right-full top-0 mr-1 w-48 bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] rounded-md shadow-lg z-50">
+                      <div className="scheduler-view-menu absolute right-full top-0 mr-1 w-48 bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] rounded-md shadow-lg z-50">
                         <div className="py-1">
                           <button
                             onClick={() => {
@@ -703,7 +686,7 @@ export default function Scheduler() {
                             className="w-full text-left px-4 py-2 text-sm text-[hsl(var(--color-foreground))] hover:bg-[hsl(var(--color-surface-elevated))] flex items-center justify-between"
                           >
                             <span>Employee View</span>
-                            {viewType === 'employee' && <span className="text-blue-600">✓</span>}
+                            {viewType === 'employee' && <span className="text-[hsl(var(--color-primary))]">✓</span>}
                           </button>
                           <button
                             onClick={() => {
@@ -713,7 +696,7 @@ export default function Scheduler() {
                             className="w-full text-left px-4 py-2 text-sm text-[hsl(var(--color-foreground))] hover:bg-[hsl(var(--color-surface-elevated))] flex items-center justify-between"
                           >
                             <span>Location View</span>
-                            {viewType === 'location' && <span className="text-blue-600">✓</span>}
+                            {viewType === 'location' && <span className="text-[hsl(var(--color-primary))]">✓</span>}
                           </button>
                           <button
                             onClick={() => {
@@ -723,7 +706,7 @@ export default function Scheduler() {
                             className="w-full text-left px-4 py-2 text-sm text-[hsl(var(--color-foreground))] hover:bg-[hsl(var(--color-surface-elevated))] flex items-center justify-between"
                           >
                             <span>Position View</span>
-                            {viewType === 'position' && <span className="text-blue-600">✓</span>}
+                            {viewType === 'position' && <span className="text-[hsl(var(--color-primary))]">✓</span>}
                           </button>
                         </div>
                       </div>
@@ -736,36 +719,10 @@ export default function Scheduler() {
                     }}
                     className="w-full text-left px-4 py-2 text-sm text-[hsl(var(--color-foreground))] hover:bg-[hsl(var(--color-surface-elevated))] flex items-center gap-2"
                   >
-                    <Grid3x3 className="h-4 w-4 text-blue-600" />
+                    <Grid3x3 className="h-4 w-4 text-[hsl(var(--color-primary))]" />
                     View Deleted Shifts
                   </button>
 
-                  <div className="border-t border-[hsl(var(--color-border))] my-1"></div>
-
-                  <div className="px-4 py-2">
-                    <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-sm text-[hsl(var(--color-foreground))]">
-                        Show Total Hours
-                      </span>
-                      <input type="checkbox" className="toggle" />
-                    </label>
-                  </div>
-                  <div className="px-4 py-2">
-                    <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-sm text-[hsl(var(--color-foreground))]">
-                        Show Scheduled Employees Only
-                      </span>
-                      <input type="checkbox" className="toggle" />
-                    </label>
-                  </div>
-                  <div className="px-4 py-2">
-                    <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-sm text-[hsl(var(--color-foreground))]">
-                        Minimized View
-                      </span>
-                      <input type="checkbox" className="toggle" />
-                    </label>
-                  </div>
                 </div>
               </div>
             )}
@@ -795,8 +752,9 @@ export default function Scheduler() {
         </div>
       </div>
 
-      {/* Main Content Area - single scroll container, rows span full width */}
-      <div className="flex-1 overflow-x-auto overflow-y-auto">
+      <ShiftAgenda dates={Array.from({ length: dateColumns.length }, (_, i) => { const day = new Date(currentStartDate); day.setDate(day.getDate() + i); return day; })} shifts={shifts} employees={employees} loading={loading} onAdd={handleAddShift} showEmployee needsSite={!selectedSite} />
+      {/* Desktop calendar */}
+      <div className="agenda-desktop scheduler-grid flex-1 overflow-x-auto overflow-y-auto">
         <div className="min-w-max">
 
           {/* Header Row: Search box + Date columns */}
@@ -845,17 +803,17 @@ export default function Scheduler() {
                     </div>
                   )}
                   {date.includes("25, Dec") && (
-                    <div className="mt-1 px-2 py-0.5 bg-blue-900 text-white text-xs rounded">
+                    <div className="mt-1 px-2 py-0.5 bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] text-xs rounded">
                       Christmas Day
                     </div>
                   )}
                   {date.includes("26, Dec") && (
-                    <div className="mt-1 px-2 py-0.5 bg-blue-900 text-white text-xs rounded">
+                    <div className="mt-1 px-2 py-0.5 bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] text-xs rounded">
                       Boxing Day
                     </div>
                   )}
                   {date.includes("1, Jan") && (
-                    <div className="mt-1 px-2 py-0.5 bg-gray-800 text-white text-xs rounded">
+                    <div className="mt-1 px-2 py-0.5 bg-[hsl(var(--color-foreground))] text-[hsl(var(--color-background))] text-xs rounded">
                       New Year
                     </div>
                   )}
@@ -902,11 +860,11 @@ export default function Scheduler() {
                     {/* Sidebar cell */}
                     <div className="w-[120px] sm:w-[185px] flex-shrink-0 p-2 sm:p-3 border-r border-[hsl(var(--color-border))] bg-[hsl(var(--color-surface-elevated))] hover:bg-[hsl(var(--color-card))] cursor-pointer flex items-center sticky left-0 z-10 border-l-2 border-l-transparent hover:border-l-[hsl(var(--color-primary))] transition-colors group">
                       <div className="flex items-start gap-1 sm:gap-2 w-full">
-                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-sm">
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-[hsl(var(--color-primary))] to-[hsl(var(--color-primary))] flex items-center justify-center flex-shrink-0 shadow-sm">
                           <MapPin className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs sm:text-sm font-medium text-blue-600 truncate group-hover:underline">
+                          <p className="text-xs sm:text-sm font-medium text-[hsl(var(--color-primary))] truncate group-hover:underline">
                             {site.name}
                           </p>
                           <div className="flex items-center gap-0.5 sm:gap-1 text-[10px] sm:text-xs text-[hsl(var(--color-foreground-secondary))]">
@@ -965,7 +923,7 @@ export default function Scheduler() {
                                     key={shift.id}
                                     className={`border rounded overflow-hidden text-xs ${
                                       shift.isAdhoc
-                                        ? "border-orange-400 bg-orange-50"
+                                        ? "border-[hsl(var(--color-warning))] bg-[hsl(var(--color-warning-soft))]"
                                         : "border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))]"
                                     }`}
                                   >
@@ -981,7 +939,7 @@ export default function Scheduler() {
                                         </span>
                                       </div>
                                       {weather && (
-                                        <div className="hidden sm:flex items-center gap-1.5 mt-1 text-blue-600">
+                                        <div className="hidden sm:flex items-center gap-1.5 mt-1 text-[hsl(var(--color-primary))]">
                                           {getWeatherIcon(weather.weather)}
                                           <span className="text-xs font-semibold">{Math.round(weather.temp)}°</span>
                                           <span className="text-xs capitalize">{weather.description}</span>
@@ -996,7 +954,7 @@ export default function Scheduler() {
                           {isHovered && cellShifts.length === 0 && (
                             <button
                               onClick={() => handleAddShift(null, index)}
-                              className="absolute inset-0 flex items-center justify-center bg-blue-50 bg-opacity-90 text-blue-600 text-sm font-medium hover:bg-blue-100 transition-colors"
+                              className="absolute inset-0 flex items-center justify-center bg-[hsl(var(--color-primary-soft))] bg-opacity-90 text-[hsl(var(--color-primary))] text-sm font-medium hover:bg-[hsl(var(--color-primary-soft))] transition-colors"
                             >
                               + Add shift
                             </button>
@@ -1022,7 +980,7 @@ export default function Scheduler() {
                       <Grid3x3 className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs sm:text-sm font-medium text-blue-600 truncate">
+                      <p className="text-xs sm:text-sm font-medium text-[hsl(var(--color-primary))] truncate">
                         Open Shift
                       </p>
                       <div className="flex items-center gap-0.5 sm:gap-1 text-[10px] sm:text-xs text-[hsl(var(--color-foreground-secondary))]">
@@ -1062,7 +1020,7 @@ export default function Scheduler() {
                                 key={shift.id}
                                 className={`border rounded overflow-hidden text-xs ${
                                   shift.isAdhoc
-                                    ? "border-orange-400 bg-orange-50"
+                                    ? "border-[hsl(var(--color-warning))] bg-[hsl(var(--color-warning-soft))]"
                                     : "border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))]"
                                 }`}
                               >
@@ -1079,7 +1037,7 @@ export default function Scheduler() {
                                     </span>
                                   </div>
                                   {weather && (
-                                    <div className="hidden sm:flex items-center gap-1.5 mt-1 text-blue-600">
+                                    <div className="hidden sm:flex items-center gap-1.5 mt-1 text-[hsl(var(--color-primary))]">
                                       {getWeatherIcon(weather.weather)}
                                       <span className="text-xs font-semibold">{Math.round(weather.temp)}°</span>
                                       <span className="text-xs capitalize">{weather.description}</span>
@@ -1088,10 +1046,10 @@ export default function Scheduler() {
                                 </div>
                                 <div className="flex items-center gap-0.5 sm:gap-1 flex-wrap">
                                   {shift.isAdhoc && (
-                                    <div className="bg-orange-500 text-white px-1 sm:px-2 py-0.5 font-medium text-[9px] sm:text-xs">ADHOC</div>
+                                    <div className="bg-[hsl(var(--color-warning))] text-[hsl(var(--color-warning-foreground))] px-1 sm:px-2 py-0.5 font-medium text-[9px] sm:text-xs">ADHOC</div>
                                   )}
                                   {shift.status === "SCHEDULED" && (
-                                    <div className="bg-green-500 text-white px-1 sm:px-2 py-0.5 font-medium text-[9px] sm:text-xs">Published</div>
+                                    <div className="bg-[hsl(var(--color-success))] text-[hsl(var(--color-success-foreground))] px-1 sm:px-2 py-0.5 font-medium text-[9px] sm:text-xs">Published</div>
                                   )}
                                 </div>
                               </div>
@@ -1102,7 +1060,7 @@ export default function Scheduler() {
                       {isHovered && cellShifts.length === 0 && (
                         <button
                           onClick={() => handleAddShift(null, index)}
-                          className="absolute inset-0 flex items-center justify-center bg-blue-50 bg-opacity-90 text-blue-600 text-sm font-medium hover:bg-blue-100 transition-colors"
+                          className="absolute inset-0 flex items-center justify-center bg-[hsl(var(--color-primary-soft))] bg-opacity-90 text-[hsl(var(--color-primary))] text-sm font-medium hover:bg-[hsl(var(--color-primary-soft))] transition-colors"
                         >
                           + Add shift
                         </button>
@@ -1127,7 +1085,7 @@ export default function Scheduler() {
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs sm:text-sm font-medium text-blue-600 truncate group-hover:underline">
+                        <p className="text-xs sm:text-sm font-medium text-[hsl(var(--color-primary))] truncate group-hover:underline">
                           {employee.name}
                         </p>
                         <div className="flex items-center gap-0.5 sm:gap-1 text-[10px] sm:text-xs text-[hsl(var(--color-foreground-secondary))]">
@@ -1171,7 +1129,7 @@ export default function Scheduler() {
                                   key={shift.id}
                                   className={`border rounded overflow-hidden text-xs ${
                                     shift.isAdhoc
-                                      ? "border-orange-400 bg-orange-50"
+                                      ? "border-[hsl(var(--color-warning))] bg-[hsl(var(--color-warning-soft))]"
                                       : "border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))]"
                                   }`}
                                 >
@@ -1188,7 +1146,7 @@ export default function Scheduler() {
                                       </span>
                                     </div>
                                     {weather && (
-                                      <div className="hidden sm:flex items-center gap-1.5 mt-1 text-blue-600">
+                                      <div className="hidden sm:flex items-center gap-1.5 mt-1 text-[hsl(var(--color-primary))]">
                                         {getWeatherIcon(weather.weather)}
                                         <span className="text-xs font-semibold">{Math.round(weather.temp)}°</span>
                                         <span className="text-xs capitalize">{weather.description}</span>
@@ -1197,10 +1155,10 @@ export default function Scheduler() {
                                   </div>
                                   <div className="flex items-center gap-0.5 sm:gap-1 flex-wrap">
                                     {shift.isAdhoc && (
-                                      <div className="bg-orange-500 text-white px-1 sm:px-2 py-0.5 font-medium text-[9px] sm:text-xs">ADHOC</div>
+                                      <div className="bg-[hsl(var(--color-warning))] text-[hsl(var(--color-warning-foreground))] px-1 sm:px-2 py-0.5 font-medium text-[9px] sm:text-xs">ADHOC</div>
                                     )}
                                     {shift.status === "SCHEDULED" && (
-                                      <div className="bg-green-500 text-white px-1 sm:px-2 py-0.5 font-medium text-[9px] sm:text-xs">Published</div>
+                                      <div className="bg-[hsl(var(--color-success))] text-[hsl(var(--color-success-foreground))] px-1 sm:px-2 py-0.5 font-medium text-[9px] sm:text-xs">Published</div>
                                     )}
                                   </div>
                                 </div>
@@ -1211,7 +1169,7 @@ export default function Scheduler() {
                         {isHovered && cellShifts.length === 0 && (
                           <button
                             onClick={() => handleAddShift(employee.id, index)}
-                            className="absolute inset-0 flex items-center justify-center bg-blue-50 bg-opacity-90 text-blue-600 text-sm font-medium hover:bg-blue-100 transition-colors"
+                            className="absolute inset-0 flex items-center justify-center bg-[hsl(var(--color-primary-soft))] bg-opacity-90 text-[hsl(var(--color-primary))] text-sm font-medium hover:bg-[hsl(var(--color-primary-soft))] transition-colors"
                           >
                             + Add shift
                           </button>
@@ -1248,11 +1206,11 @@ export default function Scheduler() {
                         {/* Sidebar cell */}
                         <div className="w-[120px] sm:w-[185px] flex-shrink-0 p-2 sm:p-3 border-r border-[hsl(var(--color-border))] bg-[hsl(var(--color-surface-elevated))] hover:bg-[hsl(var(--color-card))] cursor-pointer flex items-center sticky left-0 z-10 border-l-2 border-l-transparent hover:border-l-[hsl(var(--color-primary))] transition-colors group">
                           <div className="flex items-start gap-1 sm:gap-2 w-full">
-                            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center flex-shrink-0 shadow-sm">
+                            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-[hsl(var(--color-success))] to-[hsl(var(--color-success))] flex items-center justify-center flex-shrink-0 shadow-sm">
                               <Grid3x3 className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs sm:text-sm font-medium text-blue-600 truncate group-hover:underline">
+                              <p className="text-xs sm:text-sm font-medium text-[hsl(var(--color-primary))] truncate group-hover:underline">
                                 {position}
                               </p>
                               <div className="flex items-center gap-0.5 sm:gap-1 text-[10px] sm:text-xs text-[hsl(var(--color-foreground-secondary))]">
@@ -1296,7 +1254,7 @@ export default function Scheduler() {
                                         key={shift.id}
                                         className={`border rounded overflow-hidden text-xs ${
                                           shift.isAdhoc
-                                            ? "border-orange-400 bg-orange-50"
+                                            ? "border-[hsl(var(--color-warning))] bg-[hsl(var(--color-warning-soft))]"
                                             : "border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))]"
                                         }`}
                                       >
@@ -1318,7 +1276,7 @@ export default function Scheduler() {
                                             </span>
                                           </div>
                                           {weather && (
-                                            <div className="hidden sm:flex items-center gap-1.5 mt-1 text-blue-600">
+                                            <div className="hidden sm:flex items-center gap-1.5 mt-1 text-[hsl(var(--color-primary))]">
                                               {getWeatherIcon(weather.weather)}
                                               <span className="text-xs font-semibold">{Math.round(weather.temp)}°</span>
                                               <span className="text-xs capitalize">{weather.description}</span>
@@ -1327,10 +1285,10 @@ export default function Scheduler() {
                                         </div>
                                         <div className="flex items-center gap-0.5 sm:gap-1 flex-wrap">
                                           {shift.isAdhoc && (
-                                            <div className="bg-orange-500 text-white px-1 sm:px-2 py-0.5 font-medium text-[9px] sm:text-xs">ADHOC</div>
+                                            <div className="bg-[hsl(var(--color-warning))] text-[hsl(var(--color-warning-foreground))] px-1 sm:px-2 py-0.5 font-medium text-[9px] sm:text-xs">ADHOC</div>
                                           )}
                                           {shift.status === "SCHEDULED" && (
-                                            <div className="bg-green-500 text-white px-1 sm:px-2 py-0.5 font-medium text-[9px] sm:text-xs">Published</div>
+                                            <div className="bg-[hsl(var(--color-success))] text-[hsl(var(--color-success-foreground))] px-1 sm:px-2 py-0.5 font-medium text-[9px] sm:text-xs">Published</div>
                                           )}
                                         </div>
                                       </div>
@@ -1341,7 +1299,7 @@ export default function Scheduler() {
                               {isHovered && cellShifts.length === 0 && (
                                 <button
                                   onClick={() => handleAddShift(null, index)}
-                                  className="absolute inset-0 flex items-center justify-center bg-blue-50 bg-opacity-90 text-blue-600 text-sm font-medium hover:bg-blue-100 transition-colors"
+                                  className="absolute inset-0 flex items-center justify-center bg-[hsl(var(--color-primary-soft))] bg-opacity-90 text-[hsl(var(--color-primary))] text-sm font-medium hover:bg-[hsl(var(--color-primary-soft))] transition-colors"
                                 >
                                   + Add shift
                                 </button>
@@ -1362,7 +1320,7 @@ export default function Scheduler() {
 
       {/* Bottom Status Bar */}
       <div className="border-t border-[hsl(var(--color-border))] bg-[hsl(var(--color-surface-elevated))] px-2 sm:px-4 py-2">
-        <div className="flex items-center gap-2 sm:gap-4 lg:gap-6 text-xs overflow-x-auto">
+        <div className="scheduler-status flex items-center gap-2 sm:gap-4 lg:gap-6 text-xs overflow-x-auto">
           {stats.map((stat, index) => (
             <div key={index} className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
               <div className={`w-2 h-2 sm:w-3 sm:h-3 rounded-full ${stat.color}`} />

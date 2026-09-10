@@ -1,12 +1,12 @@
+import PageHeader from "../components/layout/PageHeader";
 import { useState, useRef, useEffect } from "react";
 import {
-  MapPin,
   Plus,
   ChevronDown,
-  Settings,
   Maximize,
   Minimize,
   RotateCw,
+  MapPin,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import SitesTable from "../components/sites/SitesTable";
@@ -22,6 +22,7 @@ export default function Sites() {
   const { isFullscreen, toggleFullscreen, isSupported } = useFullscreen(pageRef);
 
   const [showInactive, setShowInactive] = useState(false);
+  const [search, setSearch] = useState("");
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [showAddSiteModal, setShowAddSiteModal] = useState(false);
   const [showMultipleSitesModal, setShowMultipleSitesModal] = useState(false);
@@ -47,6 +48,7 @@ export default function Sites() {
       setError(null);
       const response = await siteApi.getAll({
         status: showInactive ? undefined : "ACTIVE",
+        search,
         page: pagination.page,
         limit: pagination.limit,
       });
@@ -63,7 +65,7 @@ export default function Sites() {
   // Fetch sites on mount and when filters change
   useEffect(() => {
     fetchSites();
-  }, [showInactive, pagination.page, pagination.limit]);
+  }, [showInactive, pagination.page, pagination.limit, search]);
 
   // Handle refresh button
   const handleRefresh = () => {
@@ -104,73 +106,41 @@ export default function Sites() {
   }, []);
 
   return (
-    <div ref={pageRef} className="min-h-screen bg-[hsl(var(--color-surface-elevated))]">
-      {/* Sites Submenu Bar */}
-      <div className="bg-blue-600 text-white px-4 sm:px-6 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <MapPin className="w-5 h-5" />
-            <h1 className="text-base sm:text-lg font-semibold">Sites</h1>
-          </div>
-          <div className="flex items-center gap-1 sm:gap-2">
-            <button
-              className="p-1.5 sm:p-2 hover:bg-blue-700 rounded transition-colors"
-              title="Settings"
-            >
-              <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-            {isSupported && (
-              <button
-                onClick={toggleFullscreen}
-                className="p-1.5 sm:p-2 hover:bg-blue-700 rounded transition-colors"
-                title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-              >
-                {isFullscreen ? (
-                  <Minimize className="w-4 h-4 sm:w-5 sm:h-5" />
-                ) : (
-                  <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />
-                )}
-              </button>
-            )}
-            <button
-              onClick={handleRefresh}
-              className="p-1.5 sm:p-2 hover:bg-blue-700 rounded transition-colors"
-              title="Refresh"
-            >
-              <RotateCw className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-          </div>
-        </div>
-      </div>
+    <div ref={pageRef} className="data-page">
+      <PageHeader icon={MapPin} title="Sites" eyebrow="YOUR WORKSPACE" description="Your locations, connected to the people who work there." actions={<>
+        <button className="icon-button" onClick={handleRefresh} aria-label="Refresh sites"><RotateCw size={17} /></button>
+        {isSupported && <button className="icon-button" onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>{isFullscreen ? <Minimize size={17} /> : <Maximize size={17} />}</button>}
+      </>} />
 
       {/* Content Section */}
-      <div className="p-3 sm:p-6">
+      <div className="data-page-body">
         {/* Filter Section */}
-        <div className="mb-4 sm:mb-6">
+        <div className="data-toolbar mb-4">
           <SiteFilters
             showInactive={showInactive}
-            setShowInactive={setShowInactive}
+            setShowInactive={value => { setPagination(prev => ({ ...prev, page: 1 })); setShowInactive(value); }}
+            search={search}
+            onSearchChange={value => { setPagination(prev => ({ ...prev, page: 1 })); setSearch(value); }}
           />
         </div>
 
         {/* Action Bar */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4 sm:mb-6">
+        <div className="data-actionbar">
           {/* Primary Actions */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative" ref={addMenuRef}>
               <button
                 onClick={() => setAddMenuOpen(!addMenuOpen)}
-                className="px-3 sm:px-4 py-2 bg-pink-500 text-white rounded-md hover:bg-pink-600 transition-colors flex items-center gap-2 text-sm font-medium"
+                className="px-3 sm:px-4 py-2 bg-[hsl(var(--color-primary))] text-[hsl(var(--color-primary-foreground))] rounded-md hover:bg-[hsl(var(--color-primary))] transition-colors flex items-center gap-2 text-sm font-medium"
               >
                 <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">Add New</span>
-                <span className="sm:hidden">Add</span>
+                <span>Add site</span>
                 <ChevronDown className="w-4 h-4" />
               </button>
 
               {/* Add New Dropdown */}
               {addMenuOpen && (
-                <div className="absolute left-0 top-full mt-1 w-48 bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] rounded-md shadow-lg z-50">
+                <div className="data-menu absolute left-0 top-full mt-1 w-48 z-50">
                   <button
                     onClick={() => {
                       setShowAddSiteModal(true);
@@ -194,29 +164,16 @@ export default function Sites() {
             </div>
           </div>
 
-          {/* Secondary Actions */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button className="px-3 sm:px-4 py-2 bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] text-[hsl(var(--color-foreground))] rounded-md hover:bg-[hsl(var(--color-surface-elevated))] transition-colors flex items-center gap-2 text-sm">
-              Actions
-              <ChevronDown className="w-4 h-4" />
-            </button>
-            <button className="px-3 sm:px-4 py-2 bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] text-[hsl(var(--color-foreground))] rounded-md hover:bg-[hsl(var(--color-surface-elevated))] transition-colors flex items-center gap-2 text-sm">
-              Columns
-              <ChevronDown className="w-4 h-4" />
-            </button>
-            <select className="px-3 sm:px-4 py-2 bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] text-[hsl(var(--color-foreground))] rounded-md text-sm cursor-pointer">
-              <option>25</option>
-              <option>50</option>
-              <option>100</option>
-            </select>
-          </div>
+          <label className="directory-page-size"><span>Per page</span><select aria-label="Records per page" value={pagination.limit} onChange={(e) => setPagination(prev => ({ ...prev, page: 1, limit: Number(e.target.value) }))}>{[25,50,100].map(n => <option key={n} value={n}>{n}</option>)}</select></label>
         </div>
 
+        {error && <div role="alert" className="stats-error">{error}<button onClick={handleRefresh}>Try again</button></div>}
         {/* Table */}
         <SitesTable
           sites={sites}
           loading={loading}
-          showInactive={showInactive}
+          pagination={pagination}
+          onPageChange={page => setPagination(prev => ({ ...prev, page }))}
           onSiteClick={handleSiteClick}
           onMapClick={handleMapClick}
         />
