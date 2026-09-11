@@ -64,14 +64,18 @@ router.get('/my-shifts', requireModule('scheduler'), asyncHandler(async (req, re
     throw error;
   }
 
-  // Get shifts for this employee
+  // Get shifts for this employee — includes both single-assignment (employeeId)
+  // and multi-assignment (employees array) shifts.
   const shifts = await Shift.find({
-    employeeId: employee._id,
     companyId: companyId,
     date: {
       $gte: new Date(startDate),
       $lte: new Date(endDate)
-    }
+    },
+    $or: [
+      { employeeId: employee._id },
+      { employees: employee._id },
+    ],
   })
     .populate('siteId', 'siteLocationName shortName address location')
     .sort({ date: 1, startTime: 1 })

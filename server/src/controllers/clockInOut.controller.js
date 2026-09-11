@@ -46,17 +46,19 @@ const clockIn = asyncHandler(async (req, res) => {
 
   // Send real-time notification to managers
   try {
+    const emp = timeRecord.employeeId;
+    const site = timeRecord.siteId;
     socketService.notifyClockIn({
       companyId: req.user.companyId,
       employee: {
-        id: timeRecord.employee?._id || employeeId,
-        name: timeRecord.employee?.name || 'Employee',
+        id: emp?._id || employeeId,
+        name: emp ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim() : 'Employee',
       },
       site: {
-        id: timeRecord.site?._id || siteId,
-        name: timeRecord.site?.siteLocationName || 'Site',
+        id: site?._id || siteId,
+        name: site?.siteLocationName || site?.shortName || 'Site',
       },
-      timestamp: timeRecord.clockIn,
+      timestamp: timeRecord.clockInTime,
       location: {
         latitude: timeRecord.clockInLocation?.coordinates?.[1],
         longitude: timeRecord.clockInLocation?.coordinates?.[0],
@@ -108,22 +110,23 @@ const clockOut = asyncHandler(async (req, res) => {
 
   // Send real-time notification to managers
   try {
-    // Calculate duration in minutes
-    const duration = timeRecord.clockOut && timeRecord.clockIn
-      ? Math.round((new Date(timeRecord.clockOut) - new Date(timeRecord.clockIn)) / 60000)
+    const emp = timeRecord.employeeId;
+    const site = timeRecord.siteId;
+    const duration = timeRecord.clockOutTime && timeRecord.clockInTime
+      ? Math.round((new Date(timeRecord.clockOutTime) - new Date(timeRecord.clockInTime)) / 60000)
       : null;
 
     socketService.notifyClockOut({
       companyId: req.user.companyId,
       employee: {
-        id: timeRecord.employee?._id || employeeId,
-        name: timeRecord.employee?.name || 'Employee',
+        id: emp?._id || employeeId,
+        name: emp ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim() : 'Employee',
       },
       site: {
-        id: timeRecord.site?._id,
-        name: timeRecord.site?.siteLocationName || 'Site',
+        id: site?._id,
+        name: site?.siteLocationName || site?.shortName || 'Site',
       },
-      timestamp: timeRecord.clockOut,
+      timestamp: timeRecord.clockOutTime,
       duration,
       location: {
         latitude: timeRecord.clockOutLocation?.coordinates?.[1],
@@ -281,6 +284,32 @@ const exportCSV = asyncHandler(async (req, res) => {
   res.send(csvContent);
 });
 
+const startBreak = asyncHandler(async (req, res) => {
+  const { employeeId } = req.body;
+  const context = { companyId: req.user.companyId, userId: req.user.userId, role: req.user.role };
+  const timeRecord = await clockInOutService.startBreak(context, employeeId);
+  res.json({ success: true, data: timeRecord });
+  try {
+    const emp = timeRecord.employeeId;
+    const empName = emp ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim() : 'Employee';
+    const siteName = timeRecord.siteId?.siteLocationName || timeRecord.siteId?.shortName || 'site';
+    socketService.notifyBreakStarted({ companyId: req.user.companyId, employeeName: empName, siteName });
+  } catch {}
+});
+
+const endBreak = asyncHandler(async (req, res) => {
+  const { employeeId } = req.body;
+  const context = { companyId: req.user.companyId, userId: req.user.userId, role: req.user.role };
+  const timeRecord = await clockInOutService.endBreak(context, employeeId);
+  res.json({ success: true, data: timeRecord });
+  try {
+    const emp = timeRecord.employeeId;
+    const empName = emp ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim() : 'Employee';
+    const siteName = timeRecord.siteId?.siteLocationName || timeRecord.siteId?.shortName || 'site';
+    socketService.notifyBreakEnded({ companyId: req.user.companyId, employeeName: empName, siteName });
+  } catch {}
+});
+
 module.exports = {
   clockIn,
   clockOut,
@@ -288,4 +317,6 @@ module.exports = {
   getMyHistory,
   getManagerView,
   exportCSV,
+  startBreak,
+  endBreak,
 };

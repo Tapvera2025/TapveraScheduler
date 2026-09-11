@@ -115,6 +115,26 @@ const companySchema = new mongoose.Schema(
       default: true,
       index: true,
     },
+
+    // Set by the master admin when the organisation is suspended. Cleared on
+    // reactivation. Free-form so the master can note "unpaid invoice" etc.
+    suspendedAt: {
+      type: Date,
+      default: null,
+    },
+    suspensionReason: {
+      type: String,
+      maxlength: 500,
+      default: null,
+    },
+
+    // Free-form reason recorded on soft-delete for audit. deletedAt itself is
+    // added by the softDelete plugin.
+    deletionReason: {
+      type: String,
+      maxlength: 500,
+      default: null,
+    },
   },
   {
     timestamps: true,

@@ -27,6 +27,7 @@ import { schedulerApi, weatherApi, shiftApi } from "../lib/api";
 import AddShiftModal from "../components/scheduler/AddShiftModal";
 import AddAdhocShiftModal from "../components/scheduler/AddAdhocShiftModal";
 import ViewDeletedShiftsModal from "../components/scheduler/ViewDeletedShiftsModal";
+import EditShiftModal from "../components/scheduler/EditShiftModal";
 
 export default function Scheduler() {
   const [selectedSite, setSelectedSite] = useState("");
@@ -62,8 +63,13 @@ export default function Scheduler() {
     date: null,
   });
 
+  // Edit modal state
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editShift, setEditShift] = useState(null);
+
   // Hover state
   const [hoveredCell, setHoveredCell] = useState(null);
+  const [hoveredShiftId, setHoveredShiftId] = useState(null);
 
   // Format a Date object to YYYY-MM-DD using local time (avoids UTC timezone shift)
   const toLocalDateStr = (date) => {
@@ -429,6 +435,38 @@ export default function Scheduler() {
       }
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to create adhoc shift");
+    }
+  };
+
+  // Handle opening edit shift modal (only for SCHEDULED shifts)
+  const handleOpenEditShift = (shift) => {
+    if (shift.status !== 'SCHEDULED') return;
+    setEditShift(shift);
+    setIsEditModalOpen(true);
+  };
+
+  // Handle saving an edited shift
+  const handleSaveEditedShift = async (shiftId, shiftData) => {
+    try {
+      await shiftApi.update(shiftId, shiftData);
+      toast.success("Shift updated successfully");
+      setIsEditModalOpen(false);
+      setEditShift(null);
+
+      if (selectedSite) {
+        const numDays =
+          viewMode === "week" ? 7 : viewMode === "2weeks" ? 14 : viewMode === "3weeks" ? 21 : 28;
+        const endDate = new Date(currentStartDate);
+        endDate.setDate(endDate.getDate() + numDays - 1);
+        const shiftsResponse = await schedulerApi.getSiteShifts(
+          selectedSite,
+          toLocalDateStr(currentStartDate),
+          toLocalDateStr(endDate),
+        );
+        setShifts(shiftsResponse.data.data);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to update shift");
     }
   };
 
@@ -895,16 +933,16 @@ export default function Scheduler() {
                       const cellKey = `location-${site.id}-${index}`;
                       const isHovered = hoveredCell === cellKey;
                       // Get shifts for this site and date
+                      const targetDate = new Date(currentStartDate);
+                      targetDate.setDate(targetDate.getDate() + index);
                       const cellShifts = shifts.filter(shift => {
                         const shiftSiteId = shift.siteId ?
                           (typeof shift.siteId === "object" ? shift.siteId._id || shift.siteId.id : shift.siteId) :
                           (shift.site ? (typeof shift.site === "object" ? shift.site._id || shift.site.id : shift.site) : null);
-                        const shiftDate = new Date(shift.date);
-                        const targetDate = dateRange[index];
-                        return shiftSiteId === site.id &&
-                               shiftDate.getDate() === targetDate.getDate() &&
-                               shiftDate.getMonth() === targetDate.getMonth() &&
-                               shiftDate.getFullYear() === targetDate.getFullYear();
+                        const sd = new Date(shift.date);
+                        const shiftDate = `${sd.getUTCFullYear()}-${String(sd.getUTCMonth() + 1).padStart(2, '0')}-${String(sd.getUTCDate()).padStart(2, '0')}`;
+                        const targetDateStr = toLocalDateStr(targetDate);
+                        return shiftSiteId === site.id && shiftDate === targetDateStr;
                       });
 
                       return (
@@ -918,15 +956,26 @@ export default function Scheduler() {
                             <div className="space-y-1">
                               {cellShifts.map((shift) => {
                                 const weather = getWeatherForDate(index, site.id);
+                                const canEdit = shift.status === 'SCHEDULED';
                                 return (
                                   <div
                                     key={shift.id}
-                                    className={`border rounded overflow-hidden text-xs ${
+                                    onDoubleClick={() => handleOpenEditShift(shift)}
+                                    onMouseEnter={() => canEdit && setHoveredShiftId(shift.id)}
+                                    onMouseLeave={() => setHoveredShiftId(null)}
+                                    className={`border rounded overflow-hidden text-xs relative ${canEdit ? "cursor-pointer" : "cursor-default"} ${
                                       shift.isAdhoc
                                         ? "border-[hsl(var(--color-warning))] bg-[hsl(var(--color-warning-soft))]"
                                         : "border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))]"
                                     }`}
                                   >
+                                    {canEdit && hoveredShiftId === shift.id && (
+                                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10" style={{ background: 'rgba(var(--color-primary-rgb, 59 130 246) / 0.08)' }}>
+                                        <span className="text-[9px] font-semibold text-[hsl(var(--color-primary))] bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap">
+                                          Double-click to edit
+                                        </span>
+                                      </div>
+                                    )}
                                     <div className="px-1 sm:px-2 py-1">
                                       <div className="font-medium text-[hsl(var(--color-foreground))] text-[10px] sm:text-xs">
                                         {formatTime(shift.startTime)} - {formatTime(shift.endTime)}
@@ -1015,15 +1064,26 @@ export default function Scheduler() {
                                   : shift.site
                                 : null;
                             const weather = getWeatherForDate(index, shiftSiteId);
+                            const canEdit = shift.status === 'SCHEDULED';
                             return (
                               <div
                                 key={shift.id}
-                                className={`border rounded overflow-hidden text-xs ${
+                                onDoubleClick={() => handleOpenEditShift(shift)}
+                                onMouseEnter={() => canEdit && setHoveredShiftId(shift.id)}
+                                onMouseLeave={() => setHoveredShiftId(null)}
+                                className={`border rounded overflow-hidden text-xs relative ${canEdit ? "cursor-pointer" : "cursor-default"} ${
                                   shift.isAdhoc
                                     ? "border-[hsl(var(--color-warning))] bg-[hsl(var(--color-warning-soft))]"
                                     : "border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))]"
                                 }`}
                               >
+                                {canEdit && hoveredShiftId === shift.id && (
+                                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10" style={{ background: 'rgba(var(--color-primary-rgb, 59 130 246) / 0.08)' }}>
+                                    <span className="text-[9px] font-semibold text-[hsl(var(--color-primary))] bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap">
+                                      Double-click to edit
+                                    </span>
+                                  </div>
+                                )}
                                 <div className="px-1 sm:px-2 py-1">
                                   <div className="font-medium text-[hsl(var(--color-foreground))] text-[10px] sm:text-xs">
                                     {formatTime(shift.startTime)} -{" "}
@@ -1124,15 +1184,26 @@ export default function Scheduler() {
                                     : shift.site
                                   : null;
                               const weather = getWeatherForDate(index, shiftSiteId);
+                              const canEdit = shift.status === 'SCHEDULED';
                               return (
                                 <div
                                   key={shift.id}
-                                  className={`border rounded overflow-hidden text-xs ${
+                                  onDoubleClick={() => handleOpenEditShift(shift)}
+                                  onMouseEnter={() => canEdit && setHoveredShiftId(shift.id)}
+                                  onMouseLeave={() => setHoveredShiftId(null)}
+                                  className={`border rounded overflow-hidden text-xs relative ${canEdit ? "cursor-pointer" : "cursor-default"} ${
                                     shift.isAdhoc
                                       ? "border-[hsl(var(--color-warning))] bg-[hsl(var(--color-warning-soft))]"
                                       : "border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))]"
                                   }`}
                                 >
+                                  {canEdit && hoveredShiftId === shift.id && (
+                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10" style={{ background: 'rgba(var(--color-primary-rgb, 59 130 246) / 0.08)' }}>
+                                      <span className="text-[9px] font-semibold text-[hsl(var(--color-primary))] bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap">
+                                        Double-click to edit
+                                      </span>
+                                    </div>
+                                  )}
                                   <div className="px-1 sm:px-2 py-1">
                                     <div className="font-medium text-[hsl(var(--color-foreground))] text-[10px] sm:text-xs">
                                       {formatTime(shift.startTime)} -{" "}
@@ -1225,14 +1296,14 @@ export default function Scheduler() {
                           const cellKey = `position-${position}-${index}`;
                           const isHovered = hoveredCell === cellKey;
                           // Get all shifts for this position and date
+                          const targetDate = new Date(currentStartDate);
+                          targetDate.setDate(targetDate.getDate() + index);
+                          const targetDateStr = toLocalDateStr(targetDate);
                           const cellShifts = shifts.filter(shift => {
                             const shiftPosition = shift.position || shift.employeeId?.position;
-                            const shiftDate = new Date(shift.date);
-                            const targetDate = dateRange[index];
-                            return shiftPosition === position &&
-                                   shiftDate.getDate() === targetDate.getDate() &&
-                                   shiftDate.getMonth() === targetDate.getMonth() &&
-                                   shiftDate.getFullYear() === targetDate.getFullYear();
+                            const sd = new Date(shift.date);
+                            const shiftDate = `${sd.getUTCFullYear()}-${String(sd.getUTCMonth() + 1).padStart(2, '0')}-${String(sd.getUTCDate()).padStart(2, '0')}`;
+                            return shiftPosition === position && shiftDate === targetDateStr;
                           });
 
                           return (
@@ -1249,15 +1320,26 @@ export default function Scheduler() {
                                       (typeof shift.siteId === "object" ? shift.siteId._id || shift.siteId.id : shift.siteId) :
                                       (shift.site ? (typeof shift.site === "object" ? shift.site._id || shift.site.id : shift.site) : null);
                                     const weather = getWeatherForDate(index, shiftSiteId);
+                                    const canEdit = shift.status === 'SCHEDULED';
                                     return (
                                       <div
                                         key={shift.id}
-                                        className={`border rounded overflow-hidden text-xs ${
+                                        onDoubleClick={() => handleOpenEditShift(shift)}
+                                        onMouseEnter={() => canEdit && setHoveredShiftId(shift.id)}
+                                        onMouseLeave={() => setHoveredShiftId(null)}
+                                        className={`border rounded overflow-hidden text-xs relative ${canEdit ? "cursor-pointer" : "cursor-default"} ${
                                           shift.isAdhoc
                                             ? "border-[hsl(var(--color-warning))] bg-[hsl(var(--color-warning-soft))]"
                                             : "border-[hsl(var(--color-border))] bg-[hsl(var(--color-card))]"
                                         }`}
                                       >
+                                        {canEdit && hoveredShiftId === shift.id && (
+                                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10" style={{ background: 'rgba(var(--color-primary-rgb, 59 130 246) / 0.08)' }}>
+                                            <span className="text-[9px] font-semibold text-[hsl(var(--color-primary))] bg-[hsl(var(--color-card))] border border-[hsl(var(--color-border))] px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap">
+                                              Double-click to edit
+                                            </span>
+                                          </div>
+                                        )}
                                         <div className="px-1 sm:px-2 py-1">
                                           <div className="font-medium text-[hsl(var(--color-foreground))] text-[10px] sm:text-xs">
                                             {formatTime(shift.startTime)} - {formatTime(shift.endTime)}
@@ -1361,6 +1443,15 @@ export default function Scheduler() {
           siteId={selectedSite}
         />
       )}
+
+      {/* Edit Shift Modal */}
+      <EditShiftModal
+        isOpen={isEditModalOpen}
+        onClose={() => { setIsEditModalOpen(false); setEditShift(null); }}
+        onSave={handleSaveEditedShift}
+        shift={editShift}
+        sites={sites}
+      />
     </div>
   );
 }

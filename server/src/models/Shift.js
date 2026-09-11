@@ -133,6 +133,21 @@ const shiftSchema = new mongoose.Schema(
       type: Date,
     },
 
+    // Set the first time the pre-shift reminder email is sent, so the cron
+    // that hunts for upcoming shifts cannot fire twice.
+    reminderSentAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    // Set when the absence-detection cron marks a shift as NO_SHOW. Guards
+    // against re-notifying if the shift is re-opened or the status flaps.
+    absenceNotifiedAt: {
+      type: Date,
+      default: null,
+    },
+
     breakDuration: {
       type: Number, // in minutes
       default: 0,

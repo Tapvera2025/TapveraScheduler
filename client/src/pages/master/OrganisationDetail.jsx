@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Mail, RotateCw, UserPlus, Users, MapPin, CalendarDays } from "lucide-react";
+import { ArrowLeft, Mail, RotateCw, UserPlus, Users, MapPin, CalendarDays, Trash2, PauseCircle, PlayCircle } from "lucide-react";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
@@ -143,6 +143,28 @@ export default function OrganisationDetail() {
     }
   };
 
+  const toggleSuspend = async (admin) => {
+    const next = !admin.isActive;
+    try {
+      const res = await masterApi.suspendAdmin(id, admin.id, next);
+      setOrg(res.data.data);
+      toast.success(next ? "Admin reactivated" : "Admin suspended");
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Could not update admin status");
+    }
+  };
+
+  const removeAdmin = async (admin) => {
+    if (!confirm(`Delete ${admin.name}? This cannot be undone.`)) return;
+    try {
+      const res = await masterApi.deleteAdmin(id, admin.id);
+      setOrg(res.data.data);
+      toast.success("Admin removed");
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Could not delete admin");
+    }
+  };
+
   if (loading || !org || !details) {
     return (
       <div className="p-8 text-[hsl(var(--color-foreground-secondary))]">Loading...</div>
@@ -266,14 +288,21 @@ export default function OrganisationDetail() {
             {org.admins.map((admin) => (
               <div
                 key={admin.id}
-                className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl border border-[hsl(var(--color-border))] bg-[hsl(var(--color-surface-elevated))]"
+                className={`flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl border bg-[hsl(var(--color-surface-elevated))] ${
+                  admin.isActive
+                    ? "border-[hsl(var(--color-border))]"
+                    : "border-[hsl(var(--color-warning))]/40 opacity-70"
+                }`}
               >
                 <div className="min-w-0">
-                  <p className="font-medium text-[hsl(var(--color-foreground))]">
-                    {admin.name}{" "}
+                  <p className="font-medium text-[hsl(var(--color-foreground))] flex items-center gap-2 flex-wrap">
+                    {admin.name}
                     <span className="text-xs font-normal text-[hsl(var(--color-foreground-secondary))]">
                       {admin.role}
                     </span>
+                    {!admin.isActive && (
+                      <Badge variant="warning">Suspended</Badge>
+                    )}
                   </p>
                   <p className="text-sm text-[hsl(var(--color-foreground-secondary))]">
                     {admin.email}
@@ -284,9 +313,31 @@ export default function OrganisationDetail() {
                       : "Has not signed in yet"}
                   </p>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => resend(admin.id)}>
-                  <Mail className="w-4 h-4" /> Reissue password
-                </Button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button variant="outline" size="sm" onClick={() => resend(admin.id)} disabled={!admin.isActive}>
+                    <Mail className="w-4 h-4" /> Reissue password
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => toggleSuspend(admin)}
+                    title={admin.isActive ? "Suspend this admin" : "Reactivate this admin"}
+                  >
+                    {admin.isActive
+                      ? <><PauseCircle className="w-4 h-4" /> Suspend</>
+                      : <><PlayCircle className="w-4 h-4" /> Reactivate</>
+                    }
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeAdmin(admin)}
+                    className="text-[hsl(var(--color-error))]"
+                    title="Delete this admin"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>

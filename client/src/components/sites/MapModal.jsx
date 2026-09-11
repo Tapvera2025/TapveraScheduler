@@ -161,6 +161,14 @@ export default function MapModal({
       return;
     }
 
+    // Modern browsers refuse geolocation on non-HTTPS pages unless served
+    // from localhost. Catching this up-front avoids a confusing generic
+    // failure with no hint how to proceed.
+    if (window.isSecureContext === false) {
+      toast.error("Location is only available on HTTPS or localhost");
+      return;
+    }
+
     setGettingLocation(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -173,13 +181,16 @@ export default function MapModal({
       },
       (error) => {
         setGettingLocation(false);
-        let msg = "Failed to get your location";
+        let msg;
         if (error.code === error.PERMISSION_DENIED) {
-          msg = "Location permission denied. Please enable location access.";
+          msg = "Location permission denied. Enable it in your browser settings.";
         } else if (error.code === error.POSITION_UNAVAILABLE) {
-          msg = "Location information unavailable";
+          msg = "Your device could not determine a location right now.";
         } else if (error.code === error.TIMEOUT) {
-          msg = "Location request timed out";
+          msg = "The location request timed out. Try again.";
+        } else {
+          const reason = error?.message ? ` (${error.message})` : "";
+          msg = `Could not get your location${reason}. Drag the pin to set it manually.`;
         }
         toast.error(msg);
       },

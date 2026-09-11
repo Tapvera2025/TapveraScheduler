@@ -27,6 +27,12 @@ const readError = (err) =>
     message: err?.message || "Something went wrong",
   };
 
+// One-word confirmation shortcut. When a draft is on-screen and the user
+// replies with any of these, we skip the LLM round-trip entirely and hit
+// /commit (or /cancel) directly. Trailing punctuation is tolerated.
+const CONFIRM_RE = /^(y|ye|yes|yeah|yep|yup|ok|okay|k|sure|confirm|do\s+it|go\s+ahead|please\s+do|proceed)[.!?]?$/i;
+const DENY_RE    = /^(n|no|nope|nah|cancel|stop|abort|don't|dont|never\s*mind|scratch\s+that|discard)[.!?]?$/i;
+
 export default function useAgent() {
   const queryClient = useQueryClient();
 
@@ -188,6 +194,23 @@ export default function useAgent() {
       const message = String(text || "").trim();
       if (!message) return;
 
+      // One-word confirmation shortcut. If a draft is currently on-screen and
+      // the user replies "yes"/"no"/etc., act on the draft directly rather
+      // than paying for a planner turn to interpret it. Preserves the pending
+      // action state without any round-trip through the LLM or preResolver.
+      if (draft?.draftId && phase === PHASES.AWAITING_CONFIRMATION) {
+        if (CONFIRM_RE.test(message)) {
+          appendMessage({ type: "user", content: message });
+          await confirm();
+          return;
+        }
+        if (DENY_RE.test(message)) {
+          appendMessage({ type: "user", content: message });
+          await cancel();
+          return;
+        }
+      }
+
       appendMessage({ type: "user", content: message });
       setPlanning(true);
       setError(null);
@@ -195,11 +218,11 @@ export default function useAgent() {
       try {
         const res = await agentApi.chat(message, history);
         const data = res.data?.data || {};
-        const { kind, message: assistantMsg } = data;
+        const { kind, message: assistantMsg, pipeline } = data;
 
         if (assistantMsg) {
           setAssistantMessage(assistantMsg);
-          appendMessage({ type: "assistant", content: assistantMsg });
+          appendMessage({ type: "assistant", content: assistantMsg, pipeline });
         } else {
           setAssistantMessage("");
         }
@@ -219,7 +242,7 @@ export default function useAgent() {
           setToolName(data.tool);
           setResult(envelope);
           setPhase(PHASES.DONE);
-          appendMessage({ type: "result", tool: data.tool, envelope });
+          appendMessage({ type: "result", tool: data.tool, envelope, pipeline });
         } else if (kind === "write") {
           const draftData = {
             ok: true,
@@ -231,7 +254,7 @@ export default function useAgent() {
           setToolName(data.tool);
           setDraft(draftData);
           setPhase(PHASES.AWAITING_CONFIRMATION);
-          appendMessage({ type: "preview", tool: data.tool, draft: draftData });
+          appendMessage({ type: "preview", tool: data.tool, draft: draftData, pipeline });
         }
       } catch (err) {
         const e = readError(err);
@@ -260,7 +283,7 @@ export default function useAgent() {
         setPlanning(false);
       }
     },
-    [history, appendMessage]
+    [history, appendMessage, draft, phase, confirm, cancel]
   );
 
   const chooseCandidate = useCallback(

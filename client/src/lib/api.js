@@ -157,6 +157,8 @@ export const clockApi = {
   },
 
   getCurrentStatus: (employeeId) => api.get('/clock/status', { params: { employeeId } }),
+  startBreak: (employeeId) => api.post('/clock/break/start', { employeeId }),
+  endBreak: (employeeId) => api.post('/clock/break/end', { employeeId }),
 
   getMyHistory: (employeeId, params = {}) => api.get('/clock/history', {
     params: { employeeId, ...params }
@@ -225,6 +227,10 @@ export const masterApi = {
   createAdmin: (id, data) => api.post(`/master/organisations/${id}/admins`, data),
   resendCredentials: (id, userId) =>
     api.post(`/master/organisations/${id}/admins/${userId}/resend`),
+  suspendAdmin: (id, userId, isActive) =>
+    api.patch(`/master/organisations/${id}/admins/${userId}/suspend`, { isActive }),
+  deleteAdmin: (id, userId) =>
+    api.delete(`/master/organisations/${id}/admins/${userId}`),
 };
 
 // Agent API endpoints

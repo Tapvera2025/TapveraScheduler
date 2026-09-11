@@ -1,5 +1,5 @@
 import PageHeader from "../components/layout/PageHeader";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Plus,
   ChevronDown,
@@ -42,7 +42,7 @@ export default function Sites() {
   });
 
   // Fetch sites function
-  const fetchSites = async () => {
+  const fetchSites = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -60,14 +60,13 @@ export default function Sites() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showInactive, search, pagination.page, pagination.limit]);
 
   // Fetch sites on mount and when filters change
   useEffect(() => {
     fetchSites();
-  }, [showInactive, pagination.page, pagination.limit, search]);
+  }, [fetchSites]);
 
-  // Handle refresh button
   const handleRefresh = () => {
     fetchSites();
     toast.success("Sites refreshed");
@@ -210,13 +209,13 @@ export default function Sites() {
       {showMapModal && selectedSite && (
         <MapModal
           onClose={handleCloseModal}
-          initLatitude={selectedSite.latitude}
-          initLongitude={selectedSite.longitude}
+          initLatitude={selectedSite.location?.coordinates?.[1] ?? selectedSite.latitude}
+          initLongitude={selectedSite.location?.coordinates?.[0] ?? selectedSite.longitude}
           initAddress={selectedSite.address}
           initState={selectedSite.state}
           initTownSuburb={selectedSite.townSuburb}
           initPostalCode={selectedSite.postalCode}
-          initGeoFenceRadius={selectedSite.geoFenceRadius}
+          initGeoFenceRadius={selectedSite.geoFenceRadius ? selectedSite.geoFenceRadius / 1000 : 0.3}
         />
       )}
     </div>

@@ -55,6 +55,18 @@ router.post(
 );
 
 /**
+ * Start Break
+ * @route POST /api/v1/clock/break/start
+ */
+router.post('/break/start', clockInOutController.startBreak);
+
+/**
+ * End Break
+ * @route POST /api/v1/clock/break/end
+ */
+router.post('/break/end', clockInOutController.endBreak);
+
+/**
  * Get Current Clock-In Status
  * @route GET /api/v1/clock/status
  * @access Private (Authenticated employees)

@@ -201,7 +201,10 @@ const startServer = async () => {
     // 3. Initialize Socket.IO
     socketService.initialize(server);
 
-    // 4. Start HTTP server
+    // 4. Start scheduled jobs (shift reminders, absence detection)
+    require('./jobs/shiftJobs').startShiftJobs();
+
+    // 5. Start HTTP server
     server.listen(PORT, () => {
       logger.info('✓ Server started successfully', {
         port: PORT,

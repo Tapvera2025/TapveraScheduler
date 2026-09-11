@@ -18,7 +18,7 @@ export default function AddClientModal({ onClose, onSuccess, client = null }) {
     clientName: client?.clientName || "",
     state: client?.state || "",
     invoicingCompany: client?.invoicingCompany || "",
-    status: client?.status || "Active",
+    status: client?.status === "INACTIVE" ? "Inactive" : "Active",
     invoiceSubject: client?.invoiceSubject || "",
     invoiceTemplate: client?.invoiceTemplate || "",
   });

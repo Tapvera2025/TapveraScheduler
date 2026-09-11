@@ -92,6 +92,52 @@ const setStatus = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @route POST /api/v1/master/organisations/:id/suspend
+ */
+const suspendOrganisation = asyncHandler(async (req, res) => {
+  const data = await masterService.suspendOrganisation(
+    contextFrom(req),
+    req.params.id,
+    { reason: req.body?.reason }
+  );
+  res.json({ success: true, data });
+});
+
+/**
+ * @route POST /api/v1/master/organisations/:id/reactivate
+ */
+const reactivateOrganisation = asyncHandler(async (req, res) => {
+  const data = await masterService.reactivateOrganisation(
+    contextFrom(req),
+    req.params.id
+  );
+  res.json({ success: true, data });
+});
+
+/**
+ * @route DELETE /api/v1/master/organisations/:id
+ */
+const deleteOrganisation = asyncHandler(async (req, res) => {
+  const data = await masterService.deleteOrganisation(
+    contextFrom(req),
+    req.params.id,
+    { reason: req.body?.reason }
+  );
+  res.json({ success: true, data });
+});
+
+/**
+ * @route POST /api/v1/master/organisations/:id/restore
+ */
+const restoreOrganisation = asyncHandler(async (req, res) => {
+  const data = await masterService.restoreOrganisation(
+    contextFrom(req),
+    req.params.id
+  );
+  res.json({ success: true, data });
+});
+
+/**
  * @route POST /api/v1/master/organisations/:id/admins
  */
 const createAdmin = asyncHandler(async (req, res) => {
@@ -115,6 +161,31 @@ const resendCredentials = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
+/**
+ * @route PATCH /api/v1/master/organisations/:id/admins/:userId/suspend
+ */
+const suspendAdmin = asyncHandler(async (req, res) => {
+  const data = await masterService.suspendAdmin(
+    contextFrom(req),
+    req.params.id,
+    req.params.userId,
+    req.body.isActive
+  );
+  res.json({ success: true, data });
+});
+
+/**
+ * @route DELETE /api/v1/master/organisations/:id/admins/:userId
+ */
+const deleteAdmin = asyncHandler(async (req, res) => {
+  const data = await masterService.deleteAdmin(
+    contextFrom(req),
+    req.params.id,
+    req.params.userId
+  );
+  res.json({ success: true, data });
+});
+
 module.exports = {
   getStats,
   getModules,
@@ -124,6 +195,12 @@ module.exports = {
   updateOrganisation,
   setModules,
   setStatus,
+  suspendOrganisation,
+  reactivateOrganisation,
+  deleteOrganisation,
+  restoreOrganisation,
   createAdmin,
   resendCredentials,
+  suspendAdmin,
+  deleteAdmin,
 };

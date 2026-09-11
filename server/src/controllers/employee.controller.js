@@ -116,6 +116,27 @@ const deleteEmployee = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Restore a soft-deleted employee
+ * @route POST /api/employees/:id/restore
+ */
+const restoreEmployee = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const context = {
+    companyId: req.user.companyId,
+    userId: req.user.userId,
+    role: req.user.role
+  };
+
+  const result = await employeeService.restoreEmployee(context, id);
+
+  res.json({
+    success: true,
+    data: result
+  });
+});
+
+/**
  * Assign employee to sites
  * @route POST /api/employees/:id/sites
  */
@@ -144,5 +165,6 @@ module.exports = {
   createEmployee,
   updateEmployee,
   deleteEmployee,
+  restoreEmployee,
   assignToSites
 };

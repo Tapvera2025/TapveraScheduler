@@ -193,66 +193,29 @@ class LeaveService {
   }
 
   // ─── Email helpers ───────────────────────────────────────────────────────────
+  //
+  // Both helpers delegate to `email.service.js` which owns the shared design
+  // system (see renderEmail). Do not inline HTML here — every message should
+  // look like it came from the same product.
 
   async _notifyEmployee(leave, newStatus, actionNote) {
     try {
       const employee = await Employee.findById(leave.employeeId).lean();
       if (!employee?.email) return;
 
-      const typeLabel = {
-        annual: 'Annual Leave',
-        sick: 'Sick Leave',
-        personal: 'Personal Leave',
-        unpaid: 'Unpaid Leave',
-      }[leave.leaveType] || leave.leaveType;
-
       const fmt = (d) =>
         new Date(d).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });
 
-      const statusLabel = newStatus === 'approved' ? 'Approved ✅' : 'Declined ❌';
-      const statusColor = newStatus === 'approved' ? '#30704f' : '#ab423c';
-      const statusBg = newStatus === 'approved' ? '#edf5ef' : '#fbefee';
-      const statusBorder = newStatus === 'approved' ? '#30704f' : '#ab423c';
-
-      const html = `
-<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f7f6f3;">
-  <table style="width:100%;border-collapse:collapse;">
-    <tr><td align="center" style="padding:40px 0;">
-      <table style="width:100%;max-width:600px;background:#fff;box-shadow:0 4px 6px rgba(0,0,0,.1);border-collapse:collapse;">
-        <tr><td style="padding:30px;background:${statusColor};text-align:center;">
-          <h1 style="margin:0;color:#fff;font-size:24px;">Leave Request ${statusLabel}</h1>
-        </td></tr>
-        <tr><td style="padding:30px;">
-          <p style="color:#333;font-size:16px;">Hi <strong>${employee.firstName}</strong>,</p>
-          <p style="color:#555;font-size:15px;line-height:1.6;">
-            Your leave request has been <strong>${newStatus}</strong>.
-          </p>
-          <table style="width:100%;border-collapse:collapse;margin:20px 0;">
-            <tr><td style="padding:15px;background:${statusBg};border-left:4px solid ${statusBorder};border-radius:4px;">
-              <p style="margin:0 0 8px;color:#555;font-size:14px;"><strong>Leave Type:</strong> ${typeLabel}</p>
-              <p style="margin:0 0 8px;color:#555;font-size:14px;"><strong>Period:</strong> ${fmt(leave.startDate)} → ${fmt(leave.endDate)} (${leave.periodDays} day${leave.periodDays !== 1 ? 's' : ''})</p>
-              <p style="margin:0 0 8px;color:#555;font-size:14px;"><strong>Status:</strong> <span style="color:${statusColor};font-weight:bold;">${newStatus.charAt(0).toUpperCase() + newStatus.slice(1)}</span></p>
-              ${actionNote ? `<p style="margin:0;color:#555;font-size:14px;"><strong>Note from manager:</strong> ${actionNote}</p>` : ''}
-            </td></tr>
-          </table>
-          <p style="color:#999;font-size:13px;">If you have questions, please contact your manager.</p>
-        </td></tr>
-        <tr><td style="padding:20px;background:#f5f3ef;text-align:center;border-top:1px solid #e4dfd8;">
-          <p style="margin:0;color:#999;font-size:12px;">This is an automated message from Tapvera Scheduler. Please do not reply.</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`.trim();
-
-      await emailService.sendEmail({
+      await emailService.sendLeaveDecisionEmail({
         to: employee.email,
-        subject: `Your leave request has been ${newStatus}`,
-        html,
+        employeeName: `${employee.firstName} ${employee.lastName}`.trim(),
+        decision: newStatus === 'approved' ? 'approved' : 'declined',
+        leaveType: leave.leaveType,
+        startDate: fmt(leave.startDate),
+        endDate: fmt(leave.endDate),
+        days: leave.periodDays,
+        actionNote,
+        companyId: leave.companyId,
       });
     } catch (err) {
       logger.warn('Failed to send leave status email to employee:', err.message);
@@ -261,8 +224,11 @@ class LeaveService {
 
   async _notifyAdminNewRequest(leave, companyId) {
     try {
-      // Find admin(s) for the company
-      const admins = await User.find({ companyId, role: { $in: ['ADMIN', 'MANAGER'] }, isActive: true })
+      const admins = await User.find({
+        companyId,
+        role: { $in: ['ADMIN', 'MANAGER'] },
+        isActive: true,
+      })
         .select('email name')
         .lean();
       if (!admins.length) return;
@@ -270,53 +236,20 @@ class LeaveService {
       const employee = await Employee.findById(leave.employeeId).lean();
       if (!employee) return;
 
-      const typeLabel = {
-        annual: 'Annual Leave',
-        sick: 'Sick Leave',
-        personal: 'Personal Leave',
-        unpaid: 'Unpaid Leave',
-      }[leave.leaveType] || leave.leaveType;
-
       const fmt = (d) =>
         new Date(d).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });
 
-      const html = `
-<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f7f6f3;">
-  <table style="width:100%;border-collapse:collapse;">
-    <tr><td align="center" style="padding:40px 0;">
-      <table style="width:100%;max-width:600px;background:#fff;box-shadow:0 4px 6px rgba(0,0,0,.1);border-collapse:collapse;">
-        <tr><td style="padding:30px;background:#a44d28;text-align:center;">
-          <h1 style="margin:0;color:#fff;font-size:24px;">New Leave Request</h1>
-        </td></tr>
-        <tr><td style="padding:30px;">
-          <p style="color:#333;font-size:16px;">A new leave request has been submitted and requires your attention.</p>
-          <table style="width:100%;border-collapse:collapse;margin:20px 0;">
-            <tr><td style="padding:15px;background:#f8eee7;border-left:4px solid #a44d28;border-radius:4px;">
-              <p style="margin:0 0 8px;color:#555;font-size:14px;"><strong>Employee:</strong> ${employee.firstName} ${employee.lastName}</p>
-              <p style="margin:0 0 8px;color:#555;font-size:14px;"><strong>Leave Type:</strong> ${typeLabel}</p>
-              <p style="margin:0 0 8px;color:#555;font-size:14px;"><strong>Period:</strong> ${fmt(leave.startDate)} → ${fmt(leave.endDate)} (${leave.periodDays} day${leave.periodDays !== 1 ? 's' : ''})</p>
-              ${leave.notes ? `<p style="margin:0;color:#555;font-size:14px;"><strong>Notes:</strong> ${leave.notes}</p>` : ''}
-            </td></tr>
-          </table>
-          <p style="color:#999;font-size:13px;">Please log in to Tapvera Scheduler to approve or decline this request.</p>
-        </td></tr>
-        <tr><td style="padding:20px;background:#f5f3ef;text-align:center;border-top:1px solid #e4dfd8;">
-          <p style="margin:0;color:#999;font-size:12px;">This is an automated message from Tapvera Scheduler.</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`.trim();
+      const employeeName = `${employee.firstName} ${employee.lastName}`.trim();
 
       for (const admin of admins) {
-        await emailService.sendEmail({
+        await emailService.sendLeaveRequestEmail({
           to: admin.email,
-          subject: `New leave request from ${employee.firstName} ${employee.lastName}`,
-          html,
+          employeeName,
+          leaveType: leave.leaveType,
+          startDate: fmt(leave.startDate),
+          endDate: fmt(leave.endDate),
+          days: leave.periodDays,
+          notes: leave.notes,
         });
       }
     } catch (err) {

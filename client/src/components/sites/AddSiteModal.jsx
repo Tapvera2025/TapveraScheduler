@@ -59,12 +59,11 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
     townSuburb: site?.townSuburb || "",
     postalCode: site?.postalCode || "",
     timezone: site?.timezone || "Australia/Sydney",
-    latitude: site?.latitude || "",
-    longitude: site?.longitude || "",
+    latitude: site?.location?.coordinates?.[1] ?? site?.latitude ?? "",
+    longitude: site?.location?.coordinates?.[0] ?? site?.longitude ?? "",
     contactPerson: site?.contactPerson || "",
     contactPosition: site?.contactPosition || "",
-    contactPhone: site?.contactPhone || "",
-    contactMobile: site?.contactMobile || "",
+    contactPhone: site?.contactPhone || site?.contactMobile || "",
     contactEmail: site?.contactEmail || "",
     contactNotes: site?.contactNotes || "",
   });
@@ -202,6 +201,16 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
         return;
       }
 
+      // Modern browsers refuse geolocation on non-HTTPS pages unless served
+      // from localhost. Catching this up-front avoids the confusing generic
+      // "Failed to get your location" popup with no clue how to proceed.
+      if (window.isSecureContext === false) {
+        showWarningDialog(
+          "Location is only available on HTTPS or localhost. Please type the address manually instead.",
+        );
+        return;
+      }
+
       // Some browsers (particularly mobile with intermittent GPS) will fire
       // the success callback with a cached fix and then still fire the error
       // callback when the high-accuracy fetch times out. Guard both so only
@@ -238,13 +247,18 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
           if (settled) return;
           settled = true;
           setGeocoding(false);
-          let msg = "Failed to get your location";
+          let msg;
           if (error.code === error.PERMISSION_DENIED) {
-            msg = "Location permission denied. Enable it or type the address instead.";
+            msg = "Location permission denied. Enable it in your browser settings or type the address manually.";
           } else if (error.code === error.POSITION_UNAVAILABLE) {
-            msg = "Location information unavailable";
+            msg = "Your device could not determine a location right now. Please type the address manually.";
           } else if (error.code === error.TIMEOUT) {
-            msg = "Location request timed out";
+            msg = "The location request timed out. Please try again or type the address manually.";
+          } else {
+            // Include the browser's own reason if it gave one so the user is
+            // not left guessing why a generic warning appeared.
+            const reason = error?.message ? ` (${error.message})` : "";
+            msg = `Could not get your location${reason}. Please type the address manually.`;
           }
           showWarningDialog(msg);
         },
@@ -312,7 +326,7 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
       let response;
       if (site) {
         // Update existing site
-        response = await siteApi.update(site.id, payload);
+        response = await siteApi.update(site._id || site.id, payload);
       } else {
         // Create new site
         response = await siteApi.create(payload);
@@ -766,25 +780,13 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
 
                       <div>
                         <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
-                          Phone Number
+                          Contact Number
                         </label>
                         <Input
                           type="tel"
-                          placeholder="Enter phone number"
+                          placeholder="Enter contact number"
                           value={formData.contactPhone}
                           onChange={(e) => handleInputChange("contactPhone", e.target.value)}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-[hsl(var(--color-foreground-secondary))] mb-1">
-                          Mobile Number
-                        </label>
-                        <Input
-                          type="tel"
-                          placeholder="Enter mobile number"
-                          value={formData.contactMobile}
-                          onChange={(e) => handleInputChange("contactMobile", e.target.value)}
                         />
                       </div>
 

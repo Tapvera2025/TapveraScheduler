@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { dashboardApi } from "../../lib/api";
 import { useModuleStore } from "../../store/moduleStore";
 import { MODULES } from "../../constants/modules";
+import { useSocketEvent } from "../../contexts/SocketContext";
 
 export default function DashboardStats() {
   const [data, setData] = useState(null);
@@ -16,6 +17,8 @@ export default function DashboardStats() {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { fetchStats(); }, [fetchStats]);
+  useSocketEvent('clock-in', fetchStats);
+  useSocketEvent('clock-out', fetchStats);
   const fmt = (value) => loading || error ? "—" : String(value ?? 0).padStart(2, "0");
   const stats = [
     { label: "Active people", value: data?.activeEmployees, icon: Users, detail: "Your team, ready to work", to: "/employees", tone: "neutral" },

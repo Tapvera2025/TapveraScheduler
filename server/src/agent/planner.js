@@ -57,9 +57,7 @@ const stripReserved = (args) => {
   return clean;
 };
 
-const callGrok = async ({ messages, tools }) => {
-  const { apiKey, baseUrl, model, timeoutMs, maxOutputTokens } = config.agent;
-
+const callProvider = async ({ apiKey, baseUrl, model, messages, tools, timeoutMs, maxOutputTokens, label }) => {
   try {
     const { data } = await axios.post(
       `${baseUrl}/chat/completions`,
@@ -84,48 +82,240 @@ const callGrok = async ({ messages, tools }) => {
     return data;
   } catch (error) {
     const status = error.response?.status;
+    const providerMsg =
+      error.response?.data?.error?.message ||
+      error.response?.data?.error ||
+      error.response?.data?.msg ||
+      JSON.stringify(error.response?.data || {}).slice(0, 300);
 
     if (status === 401 || status === 403) {
-      // Log what the provider actually said. "Check the key" is unhelpful when
-      // the real cause is an unfunded account or a model the key cannot reach.
-      logger.error('Planner rejected by provider', {
-        status,
-        providerMessage:
-          error.response?.data?.error?.message ||
-          error.response?.data?.error ||
-          error.response?.data?.msg ||
-          JSON.stringify(error.response?.data || {}).slice(0, 300),
-        model: config.agent.model,
-      });
-      throw plannerUnavailable('The assistant is not configured correctly. Check the API key.');
+      logger.error(`Planner [${label}] rejected by provider`, { status, providerMsg, model });
+      const err = plannerUnavailable(`The assistant is not configured correctly (${label}). Check the API key.`);
+      err._retriable = false;
+      throw err;
     }
     if (status === 429) {
-      throw plannerUnavailable('The assistant is rate limited right now. Try again shortly.');
+      logger.warn(`Planner [${label}] rate limited`, { model });
+      const err = plannerUnavailable(`The assistant is rate limited right now (${label}). Try again shortly.`);
+      err._retriable = true;
+      throw err;
     }
     if (status === 404) {
-      // Almost always a model name this account cannot reach. Say so, rather
-      // than "unavailable", which sends people looking at the wrong thing.
-      logger.error('Planner model not found', {
-        model: config.agent.model,
-        baseUrl: config.agent.baseUrl,
-        providerMessage: error.response?.data?.error?.message || '',
-      });
-      throw plannerUnavailable(
-        `The assistant model "${config.agent.model}" is not available on this account. Run: npm run check:planner`
-      );
+      logger.error(`Planner [${label}] model not found`, { model, baseUrl, providerMsg });
+      const err = plannerUnavailable(`The assistant model "${model}" is not available on this account (${label}).`);
+      err._retriable = false;
+      throw err;
     }
-
     if (error.code === 'ECONNABORTED') {
-      throw new AgentError(CODES.TIMEOUT, 'The assistant took too long to answer.');
+      const err = new AgentError(CODES.TIMEOUT, `The assistant took too long to answer (${label}).`);
+      err._retriable = true;
+      throw err;
     }
 
-    logger.error('Planner request failed', { status, error: error.message });
-    throw plannerUnavailable('The assistant is unavailable right now. You can still use the form.');
+    logger.error(`Planner [${label}] request failed`, { status, error: error.message, model });
+    const err = plannerUnavailable(`The assistant is unavailable right now (${label}).`);
+    err._retriable = true;
+    throw err;
   }
 };
 
 /**
- * @returns {Promise<{ kind: 'tool_call'|'reply', tool?, input?, message, usage }>}
+ * Strip Gemini-incompatible keywords from a JSON schema. Gemini's schema
+ * validator rejects `additionalProperties`, `$schema`, and a couple of other
+ * OpenAI/JSON-Schema conveniences. Recurses through nested schemas.
+ */
+const cleanForGemini = (schema) => {
+  if (!schema || typeof schema !== 'object') return schema;
+  if (Array.isArray(schema)) return schema.map(cleanForGemini);
+  const out = {};
+  Object.entries(schema).forEach(([k, v]) => {
+    if (k === 'additionalProperties' || k === '$schema') return;
+    out[k] = cleanForGemini(v);
+  });
+  return out;
+};
+
+/**
+ * Call Google Gemini with function-calling and return an OpenAI-shaped
+ * response, so the rest of planner.js does not need to know which provider
+ * answered. Gemini uses different envelope names — `contents` instead of
+ * `messages`, `functionDeclarations` instead of `function`, `functionCall`
+ * instead of `tool_calls` — so the shape conversion happens here.
+ */
+const callGemini = async ({ messages, tools, timeoutMs, maxOutputTokens }) => {
+  const { apiKey, baseUrl, model } = config.agent.gemini;
+
+  const systemMessages = messages.filter((m) => m.role === 'system');
+  const chatMessages = messages.filter((m) => m.role !== 'system');
+
+  const contents = chatMessages.map((m) => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: String(m.content || '') }],
+  }));
+
+  const functionDeclarations = tools.map((t) => ({
+    name: t.function.name,
+    description: t.function.description,
+    parameters: cleanForGemini(t.function.parameters),
+  }));
+
+  const body = {
+    contents,
+    tools: [{ functionDeclarations }],
+    toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+    generationConfig: {
+      temperature: 0,
+      maxOutputTokens,
+    },
+  };
+  if (systemMessages.length) {
+    body.systemInstruction = {
+      parts: [{ text: systemMessages.map((m) => m.content).join('\n\n') }],
+    };
+  }
+
+  let raw;
+  try {
+    const { data } = await axios.post(
+      `${baseUrl}/models/${model}:generateContent`,
+      body,
+      {
+        params: { key: apiKey },
+        timeout: timeoutMs,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+    raw = data;
+  } catch (error) {
+    const status = error.response?.status;
+    const providerMsg =
+      error.response?.data?.error?.message ||
+      JSON.stringify(error.response?.data || {}).slice(0, 300);
+
+    if (status === 401 || status === 403) {
+      logger.error('Planner [gemini] rejected by provider', { status, providerMsg, model });
+      const err = plannerUnavailable('The assistant is not configured correctly (gemini). Check the API key.');
+      err._retriable = false;
+      throw err;
+    }
+    if (status === 429) {
+      logger.warn('Planner [gemini] rate limited', { model });
+      const err = plannerUnavailable('The assistant is rate limited right now (gemini). Try again shortly.');
+      err._retriable = true;
+      throw err;
+    }
+    if (status === 404) {
+      logger.error('Planner [gemini] model not found', { model, providerMsg });
+      const err = plannerUnavailable(`The assistant model "${model}" is not available (gemini).`);
+      err._retriable = false;
+      throw err;
+    }
+    if (error.code === 'ECONNABORTED') {
+      const err = new AgentError(CODES.TIMEOUT, 'The assistant took too long to answer (gemini).');
+      err._retriable = true;
+      throw err;
+    }
+
+    logger.error('Planner [gemini] request failed', { status, error: error.message, model });
+    const err = plannerUnavailable('The assistant is unavailable right now (gemini).');
+    err._retriable = true;
+    throw err;
+  }
+
+  // Convert Gemini's response envelope into the OpenAI shape the caller expects.
+  const parts = raw?.candidates?.[0]?.content?.parts || [];
+  const textParts = parts.filter((p) => typeof p.text === 'string').map((p) => p.text);
+  const funcCall = parts.find((p) => p.functionCall)?.functionCall;
+
+  const openAiChoice = {
+    message: {
+      content: textParts.join('').trim(),
+      tool_calls: funcCall
+        ? [{
+            id: `gemini_${Date.now()}`,
+            type: 'function',
+            function: {
+              name: funcCall.name,
+              arguments: JSON.stringify(funcCall.args || {}),
+            },
+          }]
+        : undefined,
+    },
+  };
+
+  return {
+    choices: [openAiChoice],
+    usage: {
+      prompt_tokens: raw?.usageMetadata?.promptTokenCount ?? null,
+      completion_tokens: raw?.usageMetadata?.candidatesTokenCount ?? null,
+    },
+    model,
+  };
+};
+
+/** Dispatch: Gemini if configured, else GPT primary, else Grok fallback. */
+const callGrok = async ({ messages, tools }) => {
+  const { gemini, primary, fallback, timeoutMs, maxOutputTokens } = config.agent;
+
+  // Preferred: Google Gemini
+  if (gemini.apiKey) {
+    try {
+      return await callGemini({ messages, tools, timeoutMs, maxOutputTokens });
+    } catch (geminiErr) {
+      const hasBackup = primary.apiKey || fallback.apiKey;
+      if (!hasBackup) throw geminiErr;
+      if (!geminiErr._retriable) {
+        logger.error('Planner Gemini hard failure — trying OpenAI chain', { message: geminiErr.message });
+      } else {
+        logger.warn('Planner Gemini failed — trying OpenAI chain', { message: geminiErr.message });
+      }
+    }
+  }
+
+  // Primary: OpenAI GPT
+  if (primary.apiKey) {
+    try {
+      return await callProvider({
+        ...primary,
+        messages,
+        tools,
+        timeoutMs,
+        maxOutputTokens,
+        label: 'gpt',
+      });
+    } catch (primaryErr) {
+      if (!primaryErr._retriable && primary.apiKey) {
+        logger.error('Planner primary (GPT) hard failure — trying fallback', {
+          message: primaryErr.message,
+        });
+      } else {
+        logger.warn('Planner primary (GPT) failed — trying fallback', {
+          message: primaryErr.message,
+        });
+      }
+    }
+  }
+
+  // Fallback: Grok / PLANNER_*
+  if (fallback.apiKey) {
+    return await callProvider({
+      ...fallback,
+      messages,
+      tools,
+      timeoutMs,
+      maxOutputTokens,
+      label: 'grok-fallback',
+    });
+  }
+
+  throw plannerUnavailable('The assistant is unavailable right now. You can still use the form.');
+};
+
+/**
+ * @returns {Promise<{ kind: 'tool_call'|'reply', tool?, input?, message, usage, pipeline }>}
+ *
+ * `pipeline` carries per-stage timings in milliseconds so the client (and
+ * dashboards) can enforce the perf budgets in agent.md.
  */
 const plan = async ({ actor, message, history = [] }) => {
   if (!config.agent.enabled) {
@@ -138,11 +328,13 @@ const plan = async ({ actor, message, history = [] }) => {
   if (!text) throw invalidInput('Say what you would like to do');
   if (text.length > MAX_MESSAGE_CHARS) throw invalidInput('That request is too long');
 
+  const t0 = Date.now();
   const [tools, company, enrichedText] = await Promise.all([
     availableTools(actor),
     getCompanyProfile(actor.companyId),
     preResolve(actor, text),
   ]);
+  const tResolved = Date.now();
 
   if (!tools.length) {
     throw plannerUnavailable('There are no operations available to your account.');
@@ -153,9 +345,13 @@ const plan = async ({ actor, message, history = [] }) => {
   // annotation so "next Friday morning for archi" becomes
   // "2026-09-18 06:00–12:00 (next Friday morning) for Archisman Dutta (employeeId: …)"
   const normalizedText = normalizeText(enrichedText, timezone);
+  const tNormalized = Date.now();
 
-  // P2.1 — fast path: common read-only patterns skip the LLM entirely.
+  // P2.1 — fast path: high-confidence patterns skip the LLM entirely. The
+  // router refuses to fire on anything it cannot parse deterministically, so
+  // a miss here means we fall through and pay for the model call.
   const fastRoute = intentRouter.route(normalizedText);
+  const tRouted = Date.now();
   if (fastRoute) {
     const offered = tools.find((t) => t.function.name === fastRoute.tool);
     if (offered) {
@@ -166,6 +362,14 @@ const plan = async ({ actor, message, history = [] }) => {
         input: fastRoute.input,
         message: null,
         usage: { promptTokens: 0, completionTokens: 0, model: 'deterministic' },
+        pipeline: {
+          resolveMs: tResolved - t0,
+          normalizeMs: tNormalized - tResolved,
+          routeMs: tRouted - tNormalized,
+          plannerMs: 0,
+          totalMs: tRouted - t0,
+          path: 'fast',
+        },
       };
     }
   }
@@ -183,7 +387,9 @@ const plan = async ({ actor, message, history = [] }) => {
     { role: 'user', content: normalizedText },
   ];
 
+  const tLlmStart = Date.now();
   const response = await callGrok({ messages, tools });
+  const tLlmEnd = Date.now();
   const choice = response?.choices?.[0];
   const assistantMessage = choice?.message?.content?.trim() || '';
   const call = choice?.message?.tool_calls?.[0];
@@ -191,7 +397,16 @@ const plan = async ({ actor, message, history = [] }) => {
   const usage = {
     promptTokens: response?.usage?.prompt_tokens ?? null,
     completionTokens: response?.usage?.completion_tokens ?? null,
-    model: config.agent.model,
+    model: response?.model || config.agent.primary.model,
+  };
+
+  const pipeline = {
+    resolveMs: tResolved - t0,
+    normalizeMs: tNormalized - tResolved,
+    routeMs: tRouted - tNormalized,
+    plannerMs: tLlmEnd - tLlmStart,
+    totalMs: tLlmEnd - t0,
+    path: 'llm',
   };
 
   if (!call) {
@@ -201,6 +416,7 @@ const plan = async ({ actor, message, history = [] }) => {
       kind: 'reply',
       message: assistantMessage || 'Could you say a little more about what you need?',
       usage,
+      pipeline,
     };
   }
 
@@ -213,6 +429,7 @@ const plan = async ({ actor, message, history = [] }) => {
       kind: 'reply',
       message: 'I could not put that into a valid request. Could you rephrase it?',
       usage,
+      pipeline,
     };
   }
 
@@ -227,6 +444,7 @@ const plan = async ({ actor, message, history = [] }) => {
       kind: 'reply',
       message: 'That is not something I can do here.',
       usage,
+      pipeline,
     };
   }
 
@@ -237,6 +455,7 @@ const plan = async ({ actor, message, history = [] }) => {
     input: stripReserved(args),
     message: assistantMessage,
     usage,
+    pipeline,
   };
 };
 

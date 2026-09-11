@@ -101,6 +101,14 @@ const timeRecordSchema = new mongoose.Schema(
       // Auto-calculated when clocked out
     },
 
+    // Breaks
+    breaks: [
+      {
+        startTime: { type: Date, required: true },
+        endTime: { type: Date, default: null },
+      },
+    ],
+
     // Notes
     notes: {
       type: String,
@@ -130,6 +138,22 @@ timeRecordSchema.virtual('durationDisplay').get(function () {
 // Virtual to check if currently clocked in
 timeRecordSchema.virtual('isClockedIn').get(function () {
   return this.status === 'CLOCKED_IN';
+});
+
+// Virtual: true when the last break entry has no endTime
+timeRecordSchema.virtual('onBreak').get(function () {
+  if (!this.breaks || this.breaks.length === 0) return false;
+  return !this.breaks[this.breaks.length - 1].endTime;
+});
+
+// Virtual: total accumulated break minutes (completed + any ongoing break)
+timeRecordSchema.virtual('breakMins').get(function () {
+  if (!this.breaks || this.breaks.length === 0) return 0;
+  const now = new Date();
+  return this.breaks.reduce((total, b) => {
+    const end = b.endTime || now;
+    return total + Math.round((end - b.startTime) / 60000);
+  }, 0);
 });
 
 // Static method to find by employee with date range
@@ -210,10 +234,14 @@ timeRecordSchema.pre('save', async function () {
     throw new Error('Clock out time is required when status is CLOCKED_OUT');
   }
 
-  // Total hours worked, to two decimal places
+  // Total hours worked (gross minus completed breaks), to two decimal places
   if (this.clockOutTime && this.clockInTime) {
-    const diff = this.clockOutTime - this.clockInTime;
-    this.totalHours = Math.round((diff / (1000 * 60 * 60)) * 100) / 100;
+    const grossMs = this.clockOutTime - this.clockInTime;
+    const breakMs = (this.breaks || []).reduce((acc, b) => {
+      if (!b.endTime) return acc;
+      return acc + (b.endTime - b.startTime);
+    }, 0);
+    this.totalHours = Math.round(((grossMs - breakMs) / (1000 * 60 * 60)) * 100) / 100;
   }
 });
 

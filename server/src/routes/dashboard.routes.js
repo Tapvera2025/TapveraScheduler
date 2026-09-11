@@ -160,11 +160,42 @@ router.get('/attendance', asyncHandler(async (req, res) => {
   );
 
   // Format clocked records
+  const LATE_GRACE_MS = 5 * 60 * 1000;
+  const EARLY_GRACE_MS = 5 * 60 * 1000;
+
   const clockedRows = records.map((r) => {
-    const shiftHrs = r.shiftId
-      ? ((new Date(r.shiftId.endTime) - new Date(r.shiftId.startTime)) / 3600000).toFixed(2)
+    const shiftStart = r.shiftId ? new Date(r.shiftId.startTime) : null;
+    const shiftEnd   = r.shiftId ? new Date(r.shiftId.endTime)   : null;
+
+    const shiftHrs = shiftStart && shiftEnd
+      ? ((shiftEnd - shiftStart) / 3600000).toFixed(2)
       : null;
-    const totalHrs = r.totalHours != null ? r.totalHours.toFixed(2) : null;
+
+    // Compute break minutes from breaks array (completed breaks only for totalHrs; all for display)
+    const completedBreakMs = (r.breaks || []).reduce((acc, b) => {
+      if (!b.endTime) return acc;
+      return acc + (new Date(b.endTime) - new Date(b.startTime));
+    }, 0);
+    const breakMins = Math.round(completedBreakMs / 60000);
+
+    // onBreak = last break entry has no endTime
+    const lastBreak = (r.breaks || []).slice(-1)[0];
+    const onBreak = !!(lastBreak && !lastBreak.endTime);
+
+    // For still-clocked-in rows, compute elapsed net of breaks
+    let totalHrs = r.totalHours != null ? r.totalHours.toFixed(2) : null;
+    if (r.status === 'CLOCKED_IN') {
+      const grossMs = now - new Date(r.clockInTime);
+      const elapsedMs = Math.max(0, grossMs - completedBreakMs);
+      totalHrs = (elapsedMs / 3600000).toFixed(2);
+    }
+
+    // Late arrival: clocked in after shift start + grace
+    const isLate = shiftStart && (new Date(r.clockInTime) - shiftStart) > LATE_GRACE_MS;
+
+    // Early leave: clocked out before shift end - grace
+    const isEarlyLeave = shiftEnd && r.clockOutTime &&
+      (shiftEnd - new Date(r.clockOutTime)) > EARLY_GRACE_MS;
 
     return {
       id: r._id.toString(),
@@ -172,15 +203,19 @@ router.get('/attendance', asyncHandler(async (req, res) => {
       employee: r.employeeId ? `${r.employeeId.firstName} ${r.employeeId.lastName}` : 'Unknown',
       mobile: r.employeeId?.phone || '—',
       site: r.siteId?.shortName || r.siteId?.siteLocationName || '—',
-      shiftTime: r.shiftId
-        ? `${new Date(r.shiftId.startTime).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false })} - ${new Date(r.shiftId.endTime).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+      shiftTime: shiftStart && shiftEnd
+        ? `${shiftStart.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false })} - ${shiftEnd.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false })}`
         : '—',
       shiftHrs,
       clockIn: r.clockInTime,
       clockOut: r.clockOutTime || null,
-      breakMins: r.breakDuration || 0,
+      breakMins,
+      onBreak,
       totalHrs,
-      status: r.status, // CLOCKED_IN | CLOCKED_OUT
+      clockInTimestamp: r.clockInTime,   // raw ISO for client-side live ticker
+      isLate: !!isLate,
+      isEarlyLeave: !!isEarlyLeave,
+      status: r.status,
     };
   });
 
@@ -288,11 +323,27 @@ router.get('/coverage', asyncHandler(async (req, res) => {
     ]),
   ]);
 
+  // Add elapsed hours from currently-clocked-in employees (not yet clocked out)
+  const stillIn = await TimeRecord.find({
+    companyId: String(companyId),
+    status: 'CLOCKED_IN',
+    clockInTime: { $gte: start, $lte: end },
+  }).select('clockInTime breaks').lean();
+
+  const inProgressHours = stillIn.reduce((acc, r) => {
+    const completedBreakMs = (r.breaks || []).reduce((bAcc, b) => {
+      if (!b.endTime) return bAcc;
+      return bAcc + (new Date(b.endTime) - new Date(b.startTime));
+    }, 0);
+    const elapsedMs = Math.max(0, new Date() - new Date(r.clockInTime) - completedBreakMs);
+    return acc + elapsedMs / 3600000;
+  }, 0);
+
   const round = (value) => Math.round((value || 0) * 100) / 100;
 
   const rosteredHours = round(rosteredRows[0]?.hours);
   const rosteredShifts = rosteredRows[0]?.shifts || 0;
-  const actualHours = round(actualRows[0]?.hours);
+  const actualHours = round((actualRows[0]?.hours || 0) + inProgressHours);
   const actualRecords = actualRows[0]?.records || 0;
   const stillClockedIn = actualRows[0]?.stillClockedIn || 0;
 
@@ -310,7 +361,7 @@ router.get('/coverage', asyncHandler(async (req, res) => {
         hours: round(actualHours - rosteredHours),
         shifts: actualRecords - rosteredShifts,
       },
-      // How much of the rostered time was actually worked
+      // How much of the rostered time was actually worked (includes in-progress elapsed time)
       hoursPercentage: pct(actualHours, rosteredHours),
       // How many rostered shifts were attended at all
       shiftsPercentage: pct(actualRecords, rosteredShifts),

@@ -45,7 +45,7 @@ class ClockInOutService {
    */
   isWithinGeofence(employeeLat, employeeLon, site) {
     if (!site.location || !site.location.coordinates) {
-      return false;
+      return true; // no geofence configured — allow clock-in
     }
 
     const siteLon = site.location.coordinates[0];
@@ -281,6 +281,82 @@ class ClockInOutService {
   }
 
   /**
+   * Start a break for an employee
+   */
+  async startBreak(context, employeeId) {
+    const { companyId } = context;
+
+    if (!mongoose.Types.ObjectId.isValid(employeeId)) {
+      const error = new Error('Invalid employee ID');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const timeRecord = await TimeRecord.findOne({ employeeId, companyId, status: 'CLOCKED_IN' });
+
+    if (!timeRecord) {
+      const error = new Error('No active clock-in found.');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const lastBreak = timeRecord.breaks[timeRecord.breaks.length - 1];
+    if (lastBreak && !lastBreak.endTime) {
+      const error = new Error('You are already on a break.');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    timeRecord.breaks.push({ startTime: new Date() });
+    await timeRecord.save();
+
+    await timeRecord.populate([
+      { path: 'employeeId', select: 'firstName lastName' },
+      { path: 'siteId', select: 'siteLocationName shortName' },
+    ]);
+
+    return timeRecord;
+  }
+
+  /**
+   * End the current break for an employee
+   */
+  async endBreak(context, employeeId) {
+    const { companyId } = context;
+
+    if (!mongoose.Types.ObjectId.isValid(employeeId)) {
+      const error = new Error('Invalid employee ID');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const timeRecord = await TimeRecord.findOne({ employeeId, companyId, status: 'CLOCKED_IN' });
+
+    if (!timeRecord) {
+      const error = new Error('No active clock-in found.');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const lastBreak = timeRecord.breaks[timeRecord.breaks.length - 1];
+    if (!lastBreak || lastBreak.endTime) {
+      const error = new Error('You are not currently on a break.');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    lastBreak.endTime = new Date();
+    await timeRecord.save();
+
+    await timeRecord.populate([
+      { path: 'employeeId', select: 'firstName lastName' },
+      { path: 'siteId', select: 'siteLocationName shortName' },
+    ]);
+
+    return timeRecord;
+  }
+
+  /**
    * Who may read a given employee's attendance.
    *
    * Employees may only read their own record. Managers and admins may read
@@ -336,8 +412,7 @@ class ClockInOutService {
     })
       .populate('employeeId', 'firstName lastName email')
       .populate('siteId', 'siteLocationName shortName')
-      .populate('shiftId', 'shiftType startTime endTime')
-      .lean();
+      .populate('shiftId', 'shiftType startTime endTime');
 
     return timeRecord;
   }

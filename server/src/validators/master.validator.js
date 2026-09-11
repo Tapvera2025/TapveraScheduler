@@ -73,7 +73,33 @@ const resendCredentialsValidation = [
   param('userId').isMongoId().withMessage('Invalid user ID'),
 ];
 
+const adminUserIdRule = [
+  organisationIdRule,
+  param('userId').isMongoId().withMessage('Invalid user ID'),
+];
+
+const suspendAdminValidation = [
+  ...adminUserIdRule,
+  body('isActive').isBoolean().withMessage('isActive must be a boolean'),
+];
+
+const deleteAdminValidation = adminUserIdRule;
+
 const getOrganisationValidation = [organisationIdRule];
+
+// Optional short audit note for suspend / delete. Kept lenient — the reason
+// is stored for record-keeping, not enforced business rules.
+const reasonBodyRule = body('reason')
+  .optional({ nullable: true, checkFalsy: true })
+  .isString()
+  .withMessage('Reason must be a string')
+  .isLength({ max: 500 })
+  .withMessage('Reason cannot exceed 500 characters');
+
+const suspendOrganisationValidation = [organisationIdRule, reasonBodyRule];
+const reactivateOrganisationValidation = [organisationIdRule];
+const deleteOrganisationValidation = [organisationIdRule, reasonBodyRule];
+const restoreOrganisationValidation = [organisationIdRule];
 
 module.exports = {
   createOrganisationValidation,
@@ -82,5 +108,11 @@ module.exports = {
   setStatusValidation,
   createAdminValidation,
   resendCredentialsValidation,
+  suspendAdminValidation,
+  deleteAdminValidation,
   getOrganisationValidation,
+  suspendOrganisationValidation,
+  reactivateOrganisationValidation,
+  deleteOrganisationValidation,
+  restoreOrganisationValidation,
 };

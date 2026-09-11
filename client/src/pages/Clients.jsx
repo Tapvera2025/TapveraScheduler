@@ -1,5 +1,5 @@
 import PageHeader from "../components/layout/PageHeader";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Plus,
   ChevronDown,
@@ -40,7 +40,7 @@ export default function Clients() {
   const [pagination, setPagination] = useState({ total: 0, pages: 1 });
 
   // Fetch clients function
-  const fetchClients = async () => {
+  const fetchClients = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -60,12 +60,12 @@ export default function Clients() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showInactive, currentPage, currentLimit, search]);
 
   // Re-fetch whenever filter or page changes
   useEffect(() => {
     fetchClients();
-  }, [showInactive, currentPage, currentLimit, search]);
+  }, [fetchClients]);
 
   // Handle refresh button
   const handleRefresh = () => {

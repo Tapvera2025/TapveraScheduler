@@ -10,6 +10,7 @@ import {
   Trash2,
   Users,
   X,
+  Zap,
 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
@@ -28,9 +29,64 @@ const QUICK_ACTIONS = [
   { label: "List employees", prompt: "List all employees", icon: Users },
 ];
 
+// Progressive "thinking" indicator. Cycles through plausible stages every 450ms
+// so the wait feels active rather than dead. This is client-side theatre — the
+// server does not stream per-stage events — but it maps to real phases we know
+// the request is going through.
+const THINKING_STAGES = [
+  "Understanding what you asked…",
+  "Checking your data…",
+  "Almost there…",
+];
+
+function ThinkingIndicator({ busy, planning, awaitingCommit }) {
+  // Parent unmounts this component when busy/planning both become false, so
+  // stage automatically resets to 0 on each new thinking cycle — no explicit
+  // reset needed inside the effect.
+  const [stage, setStage] = useState(0);
+
+  useEffect(() => {
+    if (!planning && !busy) return;
+    const id = setInterval(() => {
+      setStage((s) => Math.min(s + 1, THINKING_STAGES.length - 1));
+    }, 450);
+    return () => clearInterval(id);
+  }, [planning, busy]);
+
+  const label = awaitingCommit
+    ? "Confirming…"
+    : planning
+      ? THINKING_STAGES[stage]
+      : "Running…";
+
+  return (
+    <div className="agent-msg agent-msg--assistant">
+      <Loader2 size={12} className="animate-spin shrink-0 mt-0.5" />
+      <span className="text-[hsl(var(--color-foreground-muted))]">{label}</span>
+    </div>
+  );
+}
+
+// Small badge showing how the request was served: fast deterministic path vs.
+// LLM planner, plus total pipeline time. Data comes from planner.js and is
+// harmless to expose — it is not user data, it is our own latency.
+function PipelineBadge({ pipeline }) {
+  if (!pipeline || typeof pipeline.totalMs !== "number") return null;
+  const fast = pipeline.path === "fast";
+  return (
+    <span
+      className="agent-pipeline-badge"
+      title={`${fast ? "Fast path" : "AI planner"} · ${pipeline.totalMs}ms total`}
+    >
+      {fast ? <Zap size={9} /> : <Sparkles size={9} />}
+      {fast ? "Fast" : "AI"} · {pipeline.totalMs}ms
+    </span>
+  );
+}
+
 /** Render a generic write-preview from the preview object returned by any tool's prepare(). */
-function WritePreview({ preview }) {
-  const SKIP = new Set(["action", "notes", "conflicts"]);
+function WritePreview({ preview, skip = [] }) {
+  const SKIP = new Set(["action", "notes", "conflicts", ...skip]);
   const LABELS = {
     employee: "Employee",
     site: "Site",
@@ -105,6 +161,7 @@ function MessageBubble({ msg, agent }) {
     return (
       <div className="agent-msg agent-msg--result">
         <AgentResult envelope={msg.envelope} />
+        <PipelineBadge pipeline={msg.pipeline} />
       </div>
     );
   }
@@ -113,28 +170,44 @@ function MessageBubble({ msg, agent }) {
     const { draft } = msg;
     const preview = draft?.preview;
     if (!preview) return null;
+    // Hero line: employee, then time · site if we have them. This is what the
+    // manager actually needs to see — the "data first, explanation second"
+    // rule from the design doc. Everything else stays in the fact grid below.
+    const hasTimeSite = preview.start && preview.end && (preview.site || preview.employee);
     return (
       <div className="agent-msg agent-msg--preview">
-        <p className="eyebrow">CONFIRM THIS ACTION</p>
+        <p className="eyebrow">READY TO CONFIRM</p>
         <h4>{preview.action}</h4>
-        <WritePreview preview={preview} />
+        {(preview.employee || hasTimeSite) && (
+          <div className="agent-action-hero">
+            {preview.employee && <div className="agent-action-who">{preview.employee}</div>}
+            {hasTimeSite && (
+              <div className="agent-action-when">
+                {preview.start} → {preview.end}
+                {preview.site && <> · {preview.site}</>}
+              </div>
+            )}
+          </div>
+        )}
+        <WritePreview preview={preview} skip={preview.employee ? ["employee", "start", "end", "site"] : []} />
         {preview.notes?.length > 0 && (
           <ul className="agent-notes">
             {preview.notes.map((n, i) => <li key={i}>{n}</li>)}
           </ul>
         )}
         <div className="agent-confirm-row">
+          <Button variant="outline" size="sm" onClick={agent.cancel} disabled={agent.busy}>
+            Cancel
+          </Button>
           <Button onClick={agent.confirm} disabled={agent.busy} size="sm">
             {agent.busy && <Loader2 size={13} className="animate-spin" />}
             Confirm
           </Button>
-          <Button variant="outline" size="sm" onClick={agent.cancel} disabled={agent.busy}>
-            Cancel
-          </Button>
         </div>
-        <p className="agent-provenance">
-          Plan {draft.integrityHash?.slice(0, 12)}…
-        </p>
+        <div className="agent-preview-foot">
+          <span className="agent-provenance">Plan {draft.integrityHash?.slice(0, 12)}…</span>
+          <PipelineBadge pipeline={msg.pipeline} />
+        </div>
       </div>
     );
   }
@@ -233,6 +306,9 @@ export default function AgentPanel({ open, onClose }) {
         <div className="agent-panel-title">
           <Sparkles size={16} />
           <strong>Operations</strong>
+          <span className="agent-dev-tag" title="This assistant is still under active development">
+            UNDER DEVELOPMENT
+          </span>
         </div>
         <div className="flex items-center gap-1">
           {hasHistory && (
@@ -339,12 +415,11 @@ export default function AgentPanel({ open, onClose }) {
               <MessageBubble key={msg.id} msg={msg} agent={agent} />
             ))}
             {(busy || planning) && (
-              <div className="agent-msg agent-msg--assistant">
-                <Loader2 size={12} className="animate-spin shrink-0 mt-0.5" />
-                <span className="text-[hsl(var(--color-foreground-muted))]">
-                  {planning ? "Thinking…" : "Running…"}
-                </span>
-              </div>
+              <ThinkingIndicator
+                busy={busy}
+                planning={planning}
+                awaitingCommit={phase === PHASES.COMMITTING}
+              />
             )}
           </>
         )}

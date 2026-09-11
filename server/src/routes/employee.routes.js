@@ -7,6 +7,7 @@ const {
   createEmployeeValidation,
   updateEmployeeValidation,
   deleteEmployeeValidation,
+  restoreEmployeeValidation,
   getEmployeeByIdValidation
 } = require('../validators/employee.validator');
 
@@ -19,6 +20,7 @@ router.get('/:id', ...getEmployeeByIdValidation, validate, employeeController.ge
 router.post('/', authorize('ADMIN', 'MANAGER'), ...createEmployeeValidation, validate, employeeController.createEmployee);
 router.put('/:id', authorize('ADMIN', 'MANAGER'), ...updateEmployeeValidation, validate, employeeController.updateEmployee);
 router.delete('/:id', authorize('ADMIN', 'MANAGER'), ...deleteEmployeeValidation, validate, employeeController.deleteEmployee);
+router.post('/:id/restore', authorize('ADMIN', 'MANAGER'), ...restoreEmployeeValidation, validate, employeeController.restoreEmployee);
 
 // Employee site assignment
 router.post('/:id/sites', authorize('ADMIN', 'MANAGER'), employeeController.assignToSites);

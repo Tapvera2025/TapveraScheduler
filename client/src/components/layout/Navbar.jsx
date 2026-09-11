@@ -52,7 +52,7 @@ export default function Navbar({ onToggleSidebar, sidebarOpen = false, role = "a
           <button type="button" onClick={() => setUserMenuOpen((open) => !open)} className="account-trigger" aria-label="Account menu" aria-expanded={userMenuOpen}>
             <span className="account-avatar">{initials}</span><span className="account-label"><strong>{userName}</strong><span>{roleLabel}</span></span><ChevronDown size={14} className="account-chevron" />
           </button>
-          {userMenuOpen && <div className="account-menu glass">
+          {userMenuOpen && <div className="account-menu">
             <div className="account-menu-heading"><strong>{userName}</strong><span>{userEmail}</span></div>
             {role !== "master" && <Link to={profilePath} onClick={() => setUserMenuOpen(false)}><UserRound size={16} />My profile<ArrowUpRight size={14} className="ml-auto" /></Link>}
             <button type="button" onClick={() => { clearSession(); navigate("/login", { replace: true }); }}><LogOut size={16} />Sign out</button>

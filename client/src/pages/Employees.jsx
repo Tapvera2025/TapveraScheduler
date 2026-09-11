@@ -2,7 +2,7 @@ import PageHeader from "../components/layout/PageHeader";
 import Pagination from "../components/ui/Pagination";
 import { Switch } from "../components/ui/Switch";
 import ResponsiveTable, { MobileTableSort } from "../components/ui/ResponsiveTable";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Plus, Maximize, Minimize, RotateCw, Trash2, Edit, Search , Users } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
@@ -41,7 +41,7 @@ export default function Employees() {
   });
 
   // Fetch employees
-  const fetchEmployees = async () => {
+  const fetchEmployees = useCallback(async () => {
     try {
       setLoading(true);
       const response = await employeeApi.getAll({
@@ -61,11 +61,11 @@ export default function Employees() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [search, showInactive, pagination.page, pagination.limit]);
 
   useEffect(() => {
     fetchEmployees();
-  }, [search, showInactive, pagination.page, pagination.limit]);
+  }, [fetchEmployees]);
 
   const handleAddNew = () => {
     setEditingEmployee(null);

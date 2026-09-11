@@ -78,6 +78,10 @@ export default function AccessCodesManager({ siteId }) {
       toast.error("Code name and access code are required");
       return;
     }
+    if (draft.visibleOnMobile && !draft.whenRostered && !draft.afterClockingIn) {
+      toast.error("Select when employees should see this code: 'When rostered' or 'After clocking in'");
+      return;
+    }
     setSubmitting(true);
     try {
       await siteApi.addAccessCode(siteId, {
@@ -249,11 +253,19 @@ export default function AccessCodesManager({ siteId }) {
               label="Visible on mobile"
               hint="Master switch. If off, this code is admin-only and no employee ever sees it."
               checked={draft.visibleOnMobile}
-              onChange={(v) => setDraft({ ...draft, visibleOnMobile: v })}
+              onChange={(v) =>
+                setDraft({
+                  ...draft,
+                  visibleOnMobile: v,
+                  // Default to whenRostered when first enabling mobile visibility
+                  // so codes are visible without requiring a second step.
+                  whenRostered: v && !draft.whenRostered && !draft.afterClockingIn ? true : draft.whenRostered,
+                })
+              }
             />
             <VisibilityCheckbox
               label="Show when rostered"
-              hint="Reveal the code as soon as the employee is rostered on this site — even before their shift."
+              hint="Reveal the code as soon as the employee is assigned to a shift at this site."
               checked={draft.whenRostered}
               onChange={(v) => setDraft({ ...draft, whenRostered: v })}
               disabled={!draft.visibleOnMobile}
@@ -265,6 +277,11 @@ export default function AccessCodesManager({ siteId }) {
               onChange={(v) => setDraft({ ...draft, afterClockingIn: v })}
               disabled={!draft.visibleOnMobile}
             />
+            {draft.visibleOnMobile && !draft.whenRostered && !draft.afterClockingIn && (
+              <p className="text-xs text-[hsl(var(--color-warning,var(--color-error)))] mt-1">
+                Select at least one option above — otherwise employees will see this code as locked.
+              </p>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

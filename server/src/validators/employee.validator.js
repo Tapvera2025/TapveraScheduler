@@ -141,9 +141,17 @@ const getEmployeeByIdValidation = [
     .withMessage('Employee ID is required')
 ];
 
+// Restore employee validation
+const restoreEmployeeValidation = [
+  param('id')
+    .notEmpty()
+    .withMessage('Employee ID is required')
+];
+
 module.exports = {
   createEmployeeValidation,
   updateEmployeeValidation,
   deleteEmployeeValidation,
+  restoreEmployeeValidation,
   getEmployeeByIdValidation
 };

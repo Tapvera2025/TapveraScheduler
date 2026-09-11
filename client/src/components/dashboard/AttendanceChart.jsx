@@ -1,9 +1,26 @@
 import ResponsiveTable from "../ui/ResponsiveTable";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Select } from "../ui/Select";
 import { Button } from "../ui/Button";
 import { ChevronLeft, ChevronRight, RotateCw } from "lucide-react";
 import { dashboardApi } from "../../lib/api";
+import { useSocketEvent } from "../../contexts/SocketContext";
+
+function LiveElapsed({ clockInTimestamp, breakMins }) {
+  const [display, setDisplay] = useState('');
+  useEffect(() => {
+    const tick = () => {
+      const elapsedMs = Math.max(0, Date.now() - new Date(clockInTimestamp) - (breakMins || 0) * 60000);
+      const h = Math.floor(elapsedMs / 3600000);
+      const m = Math.floor((elapsedMs % 3600000) / 60000);
+      setDisplay(`${h}h ${m}m`);
+    };
+    tick();
+    const id = setInterval(tick, 60000);
+    return () => clearInterval(id);
+  }, [clockInTimestamp, breakMins]);
+  return <span className="text-[hsl(var(--color-success))] font-medium">{display}</span>;
+}
 
 export default function AttendanceChart() {
   const [viewMode, setViewMode] = useState("shift");
@@ -32,6 +49,12 @@ export default function AttendanceChart() {
     const interval = setInterval(fetchAttendance, 60000);
     return () => clearInterval(interval);
   }, [fetchAttendance]);
+
+  // Re-fetch on any clock/break event
+  useSocketEvent('clock-in', fetchAttendance);
+  useSocketEvent('clock-out', fetchAttendance);
+  useSocketEvent('break-start', fetchAttendance);
+  useSocketEvent('break-end', fetchAttendance);
 
   const formatTime = (iso) => {
     if (!iso) return "—";
@@ -70,10 +93,13 @@ export default function AttendanceChart() {
   };
 
   // Derived stats
-  const workingCount  = attendanceRecords.filter((r) => r.status === "CLOCKED_IN").length;
-  const clockedOut    = attendanceRecords.filter((r) => r.status === "CLOCKED_OUT").length;
-  const noShowCount   = attendanceRecords.filter((r) => r.status === "NO_SHOW").length;
-  const totalShifts   = attendanceRecords.length;
+  const workingCount    = attendanceRecords.filter((r) => r.status === "CLOCKED_IN").length;
+  const clockedOut      = attendanceRecords.filter((r) => r.status === "CLOCKED_OUT").length;
+  const noShowCount     = attendanceRecords.filter((r) => r.status === "NO_SHOW").length;
+  const totalShifts     = attendanceRecords.length;
+  const lateCount       = attendanceRecords.filter((r) => r.isLate).length;
+  const earlyLeaveCount = attendanceRecords.filter((r) => r.isEarlyLeave).length;
+  const onBreakCount    = attendanceRecords.filter((r) => r.onBreak).length;
 
   // Pagination
   const totalPages  = Math.max(1, Math.ceil(totalShifts / itemsPerPage));
@@ -81,14 +107,14 @@ export default function AttendanceChart() {
   const pagedRecords = attendanceRecords.slice(startIdx, startIdx + itemsPerPage);
 
   const attendanceData = [
-    { label: "Working",             value: workingCount, color: "bg-[hsl(var(--color-primary))]" },
-    { label: "No Show",             value: noShowCount,  color: "bg-[hsl(var(--color-error))]" },
-    { label: "Clocked Out",         value: clockedOut,   color: "bg-[hsl(var(--color-success))]" },
-    { label: "No Activity",         value: 0,            color: "bg-[hsl(var(--color-border-strong))]" },
-    { label: "Late Arrival",        value: 0,            color: "bg-[hsl(var(--color-warning))]" },
-    { label: "Early Leave",         value: 0,            color: "bg-[hsl(var(--color-warning))]" },
-    { label: "Left Job Site",       value: 0,            color: "bg-[hsl(var(--color-primary))]" },
-    { label: "Outside Job Site",    value: 0,            color: "bg-[hsl(var(--color-primary))]" },
+    { label: "Working",             value: workingCount,    color: "bg-[hsl(var(--color-primary))]" },
+    { label: "No Show",             value: noShowCount,     color: "bg-[hsl(var(--color-error))]" },
+    { label: "Clocked Out",         value: clockedOut,      color: "bg-[hsl(var(--color-success))]" },
+    { label: "No Activity",         value: 0,               color: "bg-[hsl(var(--color-border-strong))]" },
+    { label: "Late Arrival",        value: lateCount,       color: "bg-[hsl(var(--color-warning))]" },
+    { label: "Early Leave",         value: earlyLeaveCount, color: "bg-[hsl(var(--color-warning))]" },
+    { label: "Left Job Site",       value: 0,               color: "bg-[hsl(var(--color-primary))]" },
+    { label: "Outside Job Site",    value: 0,               color: "bg-[hsl(var(--color-primary))]" },
   ];
 
   const maxVal = Math.max(...attendanceData.map((d) => d.value), 1);
@@ -98,8 +124,9 @@ export default function AttendanceChart() {
     { label: "No Show",               value: noShowCount },
     { label: "Clocked Out (Done)",    value: clockedOut },
     { label: "No Activity",           value: 0 },
-    { label: "Late Arrival",          value: 0 },
-    { label: "Early Leave",           value: 0 },
+    { label: "Late Arrival",          value: lateCount },
+    { label: "Early Leave",           value: earlyLeaveCount },
+    { label: "On Break",              value: onBreakCount },
     { label: "Left Job Site",         value: 0 },
     { label: "Outside Job Site",      value: 0 },
     { label: "Total Scheduled Shifts", value: totalShifts },
@@ -221,16 +248,24 @@ export default function AttendanceChart() {
                   <td role="cell" data-label="Clock out" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
                     {formatTime(record.clockOut)}
                   </td>
-                  <td role="cell" data-label="Break" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
-                    {record.breakMins ? `${record.breakMins}m` : "—"}
+                  <td role="cell" data-label="Break" className="px-4 py-3 text-sm whitespace-nowrap">
+                    {record.onBreak
+                      ? <span className="text-[hsl(var(--color-warning))] font-medium">On break</span>
+                      : (record.breakMins > 0 ? `${record.breakMins}m` : "—")}
                   </td>
                   <td role="cell" data-label="Total hours" className="px-4 py-3 text-sm text-[hsl(var(--color-foreground-secondary))] whitespace-nowrap">
-                    {record.totalHrs ?? "—"}
+                    {record.status === 'CLOCKED_IN'
+                      ? <LiveElapsed clockInTimestamp={record.clockInTimestamp} breakMins={record.breakMins} />
+                      : (record.totalHrs ?? "—")}
                   </td>
                   <td role="cell" data-label="Status" data-field="status" className="px-4 py-3 whitespace-nowrap">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(record.status)}`}>
-                      {formatStatus(record.status)}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(record.status)}`}>
+                        {formatStatus(record.status)}
+                      </span>
+                      {record.isLate && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-[hsl(var(--color-warning-soft))] text-[hsl(var(--color-warning))]">Late</span>}
+                      {record.isEarlyLeave && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-[hsl(var(--color-warning-soft))] text-[hsl(var(--color-warning))]">Early Leave</span>}
+                    </div>
                   </td>
                 </tr>
               ))

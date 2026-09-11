@@ -161,6 +161,7 @@ class SocketService {
    * @param {Object} data - Clock in data
    */
   notifyClockIn(data) {
+    if (!this.io) return;
     const { companyId, employee, site, timestamp, location } = data;
 
     const notification = {
@@ -193,6 +194,7 @@ class SocketService {
    * @param {Object} data - Clock out data
    */
   notifyClockOut(data) {
+    if (!this.io) return;
     const { companyId, employee, site, timestamp, duration, location } = data;
 
     const notification = {
@@ -443,6 +445,26 @@ class SocketService {
       companyId,
       employeeId,
       approved,
+    });
+  }
+
+  notifyBreakStarted({ companyId, employeeName, siteName }) {
+    if (!this.io) return;
+    this.io.to(`managers:${companyId}`).emit('break-start', {
+      type: 'BREAK_STARTED',
+      title: 'Employee on break',
+      message: `${employeeName} started a break at ${siteName}`,
+      timestamp: new Date(),
+    });
+  }
+
+  notifyBreakEnded({ companyId, employeeName, siteName }) {
+    if (!this.io) return;
+    this.io.to(`managers:${companyId}`).emit('break-end', {
+      type: 'BREAK_ENDED',
+      title: 'Break ended',
+      message: `${employeeName} resumed work at ${siteName}`,
+      timestamp: new Date(),
     });
   }
 

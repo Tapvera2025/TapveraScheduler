@@ -398,6 +398,162 @@ class MasterService {
     return await this.getOrganisation(String(company._id));
   }
 
+  /**
+   * Suspend an organisation. Sets isActive=false and subscription.status to
+   * 'suspended'. All access controls that check either flag will lock the
+   * organisation out. Does NOT touch the users or data inside it, so restore
+   * is fully reversible via reactivateOrganisation.
+   *
+   * A `reason` is stored on the company for audit but is optional.
+   */
+  async suspendOrganisation(context, organisationId, { reason } = {}) {
+    const { userId } = context;
+
+    if (!mongoose.Types.ObjectId.isValid(organisationId)) {
+      throw badRequest('Invalid organisation ID');
+    }
+
+    const company = await Company.findById(organisationId);
+    if (!company) throw badRequest('Organisation not found', 404);
+    if (company.deletedAt) throw badRequest('Organisation has been deleted', 410);
+
+    company.isActive = false;
+    company.subscription = { ...(company.subscription || {}), status: 'suspended' };
+    if (reason) company.suspensionReason = String(reason).slice(0, 500);
+    company.suspendedAt = new Date();
+    company.updatedBy = userId;
+    await company.save();
+
+    invalidateCompanyAccess(String(company._id));
+
+    logger.info('Organisation suspended', {
+      organisationId: company._id,
+      reason: reason || null,
+      by: userId,
+    });
+
+    return await this.getOrganisation(String(company._id));
+  }
+
+  /**
+   * Reactivate a suspended organisation. Flips isActive back on, moves the
+   * subscription back to 'active', and clears the suspension audit fields.
+   * Refuses if the organisation has been soft-deleted (use restore first).
+   */
+  async reactivateOrganisation(context, organisationId) {
+    const { userId } = context;
+
+    if (!mongoose.Types.ObjectId.isValid(organisationId)) {
+      throw badRequest('Invalid organisation ID');
+    }
+
+    const company = await Company.findById(organisationId);
+    if (!company) throw badRequest('Organisation not found', 404);
+    if (company.deletedAt) {
+      throw badRequest('Restore the organisation before reactivating it', 410);
+    }
+
+    company.isActive = true;
+    company.subscription = { ...(company.subscription || {}), status: 'active' };
+    company.suspensionReason = undefined;
+    company.suspendedAt = undefined;
+    company.updatedBy = userId;
+    await company.save();
+
+    invalidateCompanyAccess(String(company._id));
+
+    logger.info('Organisation reactivated', {
+      organisationId: company._id,
+      by: userId,
+    });
+
+    return await this.getOrganisation(String(company._id));
+  }
+
+  /**
+   * Soft-delete an organisation. Australian Privacy Act retention rules mean
+   * we never hard-delete tenant data: instead we set deletedAt on the company
+   * and deactivate every user in it. The company's data survives on disk for
+   * the retention window; the softDelete plugin excludes it from all normal
+   * queries so no signed-in flow can reach it.
+   *
+   * Restore via restoreOrganisation reverses this cleanly.
+   */
+  async deleteOrganisation(context, organisationId, { reason } = {}) {
+    const { userId } = context;
+
+    if (!mongoose.Types.ObjectId.isValid(organisationId)) {
+      throw badRequest('Invalid organisation ID');
+    }
+
+    const company = await Company.findById(organisationId);
+    if (!company) throw badRequest('Organisation not found', 404);
+    if (company.deletedAt) {
+      throw badRequest('Organisation is already deleted', 409);
+    }
+
+    company.isActive = false;
+    company.subscription = { ...(company.subscription || {}), status: 'cancelled' };
+    if (reason) company.deletionReason = String(reason).slice(0, 500);
+    company.deletedAt = new Date();
+    company.updatedBy = userId;
+    await company.save();
+
+    // Lock everyone out immediately. Users are not soft-deleted (audit trail
+    // needs them), just deactivated so login and API calls fail closed.
+    await User.updateMany(
+      { companyId: company._id, deletedAt: null },
+      { $set: { isActive: false } }
+    );
+
+    invalidateCompanyAccess(String(company._id));
+
+    logger.info('Organisation soft-deleted', {
+      organisationId: company._id,
+      reason: reason || null,
+      by: userId,
+    });
+
+    return { id: String(company._id), deletedAt: company.deletedAt };
+  }
+
+  /**
+   * Restore a soft-deleted organisation. Clears deletedAt but leaves users
+   * deactivated — the master admin must reactivate individual admins so a
+   * dormant tenant cannot log itself back in on restore. Subscription is
+   * left as 'cancelled' until the master admin sets it back to 'active'.
+   */
+  async restoreOrganisation(context, organisationId) {
+    const { userId } = context;
+
+    if (!mongoose.Types.ObjectId.isValid(organisationId)) {
+      throw badRequest('Invalid organisation ID');
+    }
+
+    // Bypass softDelete's default query filter to find the deleted record.
+    const company = await Company.findOne({ _id: organisationId })
+      .setOptions({ _bypassSoftDelete: true });
+
+    if (!company) throw badRequest('Organisation not found', 404);
+    if (!company.deletedAt) {
+      throw badRequest('Organisation is not deleted', 409);
+    }
+
+    company.deletedAt = null;
+    company.deletionReason = undefined;
+    company.updatedBy = userId;
+    await company.save();
+
+    invalidateCompanyAccess(String(company._id));
+
+    logger.info('Organisation restored', {
+      organisationId: company._id,
+      by: userId,
+    });
+
+    return await this.getOrganisation(String(company._id));
+  }
+
   // =========================================================
   // ORGANISATION ADMINS
   // =========================================================
@@ -421,11 +577,10 @@ class MasterService {
       throw badRequest('Organisation not found', 404);
     }
 
-    const email = String(data.email || '').trim().toLowerCase();
     const name = String(data.name || '').trim();
     const role = ORG_ADMIN_ROLES.includes(data.role) ? data.role : 'ADMIN';
 
-    if (!email || !name) {
+    if (!data.email || !name) {
       throw badRequest('An admin needs a name and an email address');
     }
 
@@ -433,11 +588,17 @@ class MasterService {
       throw badRequest('Password must be at least 8 characters');
     }
 
-    const clash = await User.findOne({ email }).select('_id role').lean();
-
-    if (clash) {
-      throw badRequest('A user with this email already exists', 409);
+    // Shared account-email validator: format, disposable, cross-collection
+    // uniqueness, MX deliverability. Scoped to this organisation.
+    const { validateAccountEmail } = require('../utils/emailValidation');
+    const emailCheck = await validateAccountEmail({
+      email: data.email,
+      companyId: String(company._id),
+    });
+    if (!emailCheck.ok) {
+      throw badRequest(emailCheck.message, emailCheck.code === 'EMAIL_IN_USE' ? 409 : 400);
     }
+    const email = emailCheck.email;
 
     const password = data.password || generateTempPassword();
 
@@ -532,6 +693,96 @@ class MasterService {
       password: emailResult.sent ? undefined : password,
       emailError: emailResult.error,
     };
+  }
+
+  /**
+   * Suspend or reactivate an individual organisation admin.
+   */
+  async suspendAdmin(context, organisationId, targetUserId, isActive) {
+    const { userId } = context;
+
+    if (!mongoose.Types.ObjectId.isValid(organisationId) ||
+        !mongoose.Types.ObjectId.isValid(targetUserId)) {
+      throw badRequest('Invalid ID');
+    }
+
+    const company = await Company.findById(organisationId).lean();
+    if (!company) throw badRequest('Organisation not found', 404);
+
+    const user = await User.findOne({
+      _id: targetUserId,
+      companyId: String(company._id),
+      role: { $in: ORG_ADMIN_ROLES },
+    });
+
+    if (!user) throw badRequest('Admin not found in this organisation', 404);
+
+    user.isActive = isActive === true || isActive === 'true';
+    user.updatedBy = userId;
+    await user.save();
+
+    logger.info('Organisation admin suspended/reactivated', {
+      organisationId: company._id,
+      targetUserId: user._id,
+      isActive: user.isActive,
+      by: userId,
+    });
+
+    return await this.getOrganisation(String(company._id));
+  }
+
+  /**
+   * Remove an admin from an organisation.
+   * Refuses if this is the last active admin so the org cannot be locked out.
+   */
+  async deleteAdmin(context, organisationId, targetUserId) {
+    const { userId } = context;
+
+    if (!mongoose.Types.ObjectId.isValid(organisationId) ||
+        !mongoose.Types.ObjectId.isValid(targetUserId)) {
+      throw badRequest('Invalid ID');
+    }
+
+    const company = await Company.findById(organisationId).lean();
+    if (!company) throw badRequest('Organisation not found', 404);
+
+    const user = await User.findOne({
+      _id: targetUserId,
+      companyId: String(company._id),
+      role: { $in: ORG_ADMIN_ROLES },
+    });
+
+    if (!user) throw badRequest('Admin not found in this organisation', 404);
+
+    const activeAdminCount = await User.countDocuments({
+      companyId: String(company._id),
+      role: { $in: ORG_ADMIN_ROLES },
+      isActive: true,
+      _id: { $ne: user._id },
+      deletedAt: null,
+    });
+
+    if (user.isActive && activeAdminCount === 0) {
+      throw badRequest(
+        'Cannot delete the last active admin — suspend them or create another admin first',
+        409
+      );
+    }
+
+    if (typeof user.softDelete === 'function') {
+      user.deletedBy = userId;
+      await user.softDelete();
+    } else {
+      await User.deleteOne({ _id: user._id });
+    }
+
+    logger.info('Organisation admin deleted', {
+      organisationId: company._id,
+      targetUserId: user._id,
+      by: userId,
+    });
+
+    return await this.getOrganisation(String(company._id));
   }
 
   /**

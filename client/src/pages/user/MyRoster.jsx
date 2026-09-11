@@ -72,25 +72,33 @@ export default function MyRoster() {
   }, [viewMode, currentStartDate]);
 
   // Fetch shifts
+  const fetchShifts = async () => {
+    try {
+      setLoading(true);
+      const numDays = numDaysForMode(viewMode);
+      const endDate = new Date(currentStartDate);
+      endDate.setDate(endDate.getDate() + numDays - 1);
+      const response = await userApi.getMyShifts(
+        toLocalDateStr(currentStartDate),
+        toLocalDateStr(endDate)
+      );
+      setShifts(response.data.data || []);
+    } catch {
+      setShifts([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchShifts = async () => {
-      try {
-        setLoading(true);
-        const numDays = numDaysForMode(viewMode);
-        const endDate = new Date(currentStartDate);
-        endDate.setDate(endDate.getDate() + numDays - 1);
-        const response = await userApi.getMyShifts(
-          toLocalDateStr(currentStartDate),
-          toLocalDateStr(endDate)
-        );
-        setShifts(response.data.data || []);
-      } catch {
-        setShifts([]);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchShifts();
+  }, [currentStartDate, viewMode]);
+
+  // Re-fetch when the tab regains focus so clock-in/out status is always current
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === "visible") fetchShifts(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [currentStartDate, viewMode]);
 
   // Fetch weather for each unique site in the loaded shifts
@@ -155,6 +163,34 @@ export default function MyRoster() {
   const calcDuration = (start, end) =>
     ((new Date(end) - new Date(start)) / (1000 * 60 * 60)).toFixed(1);
 
+  const getStatusBar = (shift) => {
+    if (shift.status === "COMPLETED") {
+      let label = "Completed";
+      if (shift.actualStartTime && shift.actualEndTime) {
+        const mins = Math.round(
+          (new Date(shift.actualEndTime) - new Date(shift.actualStartTime)) / 60000
+        );
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        label = `Completed · ${m > 0 ? `${h}h ${m}m` : `${h}h`}`;
+      }
+      return { label, bg: "bg-[hsl(var(--color-success))]", text: "text-[hsl(var(--color-success-foreground))]" };
+    }
+    if (shift.status === "IN_PROGRESS") {
+      const isLate =
+        shift.actualStartTime &&
+        new Date(shift.actualStartTime) - new Date(shift.startTime) > 5 * 60 * 1000;
+      return isLate
+        ? { label: "Late", bg: "bg-[hsl(var(--color-warning-soft))]", text: "text-[hsl(var(--color-warning))]" }
+        : { label: "Working", bg: "bg-[hsl(var(--color-info-soft))]", text: "text-[hsl(var(--color-info))]" };
+    }
+    if (shift.status === "NO_SHOW")
+      return { label: "No Show", bg: "bg-[hsl(var(--color-error-soft))]", text: "text-[hsl(var(--color-error))]" };
+    if (shift.status === "CANCELLED")
+      return { label: "Cancelled", bg: "bg-[hsl(var(--color-muted))]", text: "text-[hsl(var(--color-foreground-secondary))]" };
+    return { label: "Confirmed", bg: "bg-[hsl(var(--color-success))]", text: "text-[hsl(var(--color-success-foreground))]" };
+  };
+
   // Get weather forecast entry for a given date and site
   // Weather service keys dates using UTC (toISOString), so we must match in UTC
   const getWeatherForDate = (date, siteId) => {
@@ -207,7 +243,7 @@ export default function MyRoster() {
             </select>
             <button
               aria-label="Refresh roster"
-              onClick={() => window.location.reload()}
+              onClick={fetchShifts}
               className="p-1.5 border border-[hsl(var(--color-border))] rounded-md text-[hsl(var(--color-foreground-secondary))] hover:bg-[hsl(var(--color-surface-elevated))] transition-colors"
             >
               <RotateCw className="w-3.5 h-3.5" />
@@ -338,9 +374,7 @@ export default function MyRoster() {
                                     </div>
                                   )}
                                 </div>
-                                <div className="bg-[hsl(var(--color-success))] text-[hsl(var(--color-success-foreground))] text-[10px] font-medium text-center py-0.5 tracking-wide">
-                                  CONFIRMED
-                                </div>
+                                {(() => { const { label, bg, text } = getStatusBar(shift); return <div className={`${bg} ${text} text-[10px] font-medium text-center py-0.5 tracking-wide`}>{label.toUpperCase()}</div>; })()}
                               </div>
                             );
                           })}

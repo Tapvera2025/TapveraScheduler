@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Card } from "../ui/Card";
 import { Select } from "../ui/Select";
 import { dashboardApi } from "../../lib/api";
+import { useSocketEvent } from "../../contexts/SocketContext";
 
 const PERIODS = [
   { value: "today", label: "Today" },
@@ -56,26 +57,25 @@ export default function CoverageWidget() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        setLoading(true);
-        const res = await dashboardApi.getCoverage(period);
-        if (!cancelled) setData(res.data.data);
-      } catch {
-        if (!cancelled) setData(null);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    load();
-    return () => {
-      cancelled = true;
-    };
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await dashboardApi.getCoverage(period);
+      setData(res.data.data);
+    } catch {
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
   }, [period]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useSocketEvent('clock-in', load);
+  useSocketEvent('clock-out', load);
+  useSocketEvent('break-end', load); // break end means new hours were worked
 
   const hrs = (value) => `${(value ?? 0).toFixed(2)} HRS`;
   const signed = (value) => `${value > 0 ? "+" : ""}${(value ?? 0).toFixed(2)}`;
@@ -175,8 +175,6 @@ export default function CoverageWidget() {
 
           <p className="text-xs text-[hsl(var(--color-foreground-muted))] mt-4">
             {data.shiftsPercentage}% of rostered shifts were attended.
-            {data.actual.stillClockedIn > 0 &&
-              ` ${data.actual.stillClockedIn} still clocked in — those hours are not counted yet.`}
           </p>
         </>
       )}

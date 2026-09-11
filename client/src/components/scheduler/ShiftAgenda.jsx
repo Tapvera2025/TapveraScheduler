@@ -6,6 +6,37 @@ import { Input } from "../ui/Input";
 
 const localDay = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
+function getStatusBadge(shift) {
+  if (shift.isAdhoc) return { label: "Adhoc", cls: "badge-warning" };
+
+  if (shift.status === "COMPLETED") {
+    let label = "Completed";
+    if (shift.actualStartTime && shift.actualEndTime) {
+      const mins = Math.round(
+        (new Date(shift.actualEndTime) - new Date(shift.actualStartTime)) / 60000
+      );
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      label = `Completed · ${m > 0 ? `${h}h ${m}m` : `${h}h`}`;
+    }
+    return { label, cls: "badge-success" };
+  }
+
+  if (shift.status === "IN_PROGRESS") {
+    const isLate =
+      shift.actualStartTime &&
+      new Date(shift.actualStartTime) - new Date(shift.startTime) > 5 * 60 * 1000;
+    return isLate
+      ? { label: "Late", cls: "badge-warning" }
+      : { label: "Working", cls: "badge-info" };
+  }
+
+  if (shift.status === "NO_SHOW") return { label: "No Show", cls: "badge-error" };
+  if (shift.status === "CANCELLED") return { label: "Cancelled", cls: "badge-neutral" };
+
+  return { label: "Confirmed", cls: "badge-neutral" };
+}
+
 /** The same date range and shift data as the desktop calendar, read vertically. */
 export default function ShiftAgenda({ dates, shifts, employees = [], loading, onAdd, showEmployee = false, needsSite = false }) {
   const [search, setSearch] = useState("");
@@ -38,7 +69,7 @@ export default function ShiftAgenda({ dates, shifts, employees = [], loading, on
             <div className="agenda-shift-time"><Clock size={16} /><strong>{formatTime(shift.startTime)} – {formatTime(shift.endTime)}</strong>{Number.isFinite(hours) && <span>{Number(hours.toFixed(1))} hrs</span>}</div>
             {showEmployee && <div className="agenda-shift-person"><User size={15} /><span>{employeeName(shift)}</span></div>}
             <div className="agenda-shift-site"><MapPin size={15} /><span>{siteName(shift)}</span></div>
-            <div className="agenda-shift-footer"><span className={`attendance-status ${shift.isAdhoc ? "badge-warning" : "badge-neutral"}`}>{shift.isAdhoc ? "Adhoc" : (shift.status || "Scheduled").replaceAll("_", " ").toLowerCase()}</span>{shift.position && <span>{shift.position}</span>}</div>
+            <div className="agenda-shift-footer">{(() => { const { label, cls } = getStatusBadge(shift); return <span className={`attendance-status ${cls}`}>{label}</span>; })()}{shift.position && <span>{shift.position}</span>}</div>
           </article>;
         }) : <p className="agenda-day-off">No shifts scheduled</p>}
       </section>)}

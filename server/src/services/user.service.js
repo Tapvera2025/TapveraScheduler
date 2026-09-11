@@ -151,17 +151,18 @@ class UserService {
       throw error;
     }
 
-    // Check for duplicate email within company
-    const existingUser = await User.findOne({
-      email: data.email,
-      companyId,
-    });
-
-    if (existingUser) {
-      const error = new Error('User with this email already exists');
-      error.statusCode = 409;
+    // Full email validation: format, disposable, cross-collection uniqueness,
+    // MX deliverability. See utils/emailValidation.js. This replaces the
+    // legacy single-collection duplicate check.
+    const { validateAccountEmail } = require('../utils/emailValidation');
+    const emailCheck = await validateAccountEmail({ email: data.email, companyId });
+    if (!emailCheck.ok) {
+      const error = new Error(emailCheck.message);
+      error.statusCode = emailCheck.code === 'EMAIL_IN_USE' ? 409 : 400;
+      error.code = emailCheck.code;
       throw error;
     }
+    data.email = emailCheck.email; // normalised form goes forward
 
     // MANAGER cannot create ADMIN users
     if (role === 'MANAGER' && data.role === 'ADMIN') {

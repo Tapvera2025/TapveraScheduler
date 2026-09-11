@@ -203,17 +203,23 @@ class EmployeeService {
       }
     }
 
-    // Check for duplicate email within the company
-    const existingEmployee = await Employee.findOne({
+    // Full email validation: format, disposable, cross-collection uniqueness,
+    // MX deliverability. When the employee is being linked to an existing
+    // User (data.userId already validated above), exclude that user from the
+    // uniqueness check — sharing an email with your own User is legitimate.
+    const { validateAccountEmail } = require('../utils/emailValidation');
+    const emailCheck = await validateAccountEmail({
       email: data.email,
       companyId,
+      excludeUserId: data.userId || undefined,
     });
-
-    if (existingEmployee) {
-      const error = new Error('Employee with this email already exists');
-      error.statusCode = 409;
+    if (!emailCheck.ok) {
+      const error = new Error(emailCheck.message);
+      error.statusCode = emailCheck.code === 'EMAIL_IN_USE' ? 409 : 400;
+      error.code = emailCheck.code;
       throw error;
     }
+    data.email = emailCheck.email;
 
     // Check for duplicate employee number if provided (within the company)
     if (data.employeeNumber) {
@@ -411,19 +417,22 @@ class EmployeeService {
       }
     }
 
-    // Check if updating email, ensure no duplicates within company
+    // Same shared validator used on create. On update, exclude this employee
+    // from the uniqueness sweep so re-saving the same email is not flagged.
     if (data.email) {
-      const existingEmployee = await Employee.findOne({
+      const { validateAccountEmail } = require('../utils/emailValidation');
+      const emailCheck = await validateAccountEmail({
         email: data.email,
         companyId,
-        _id: { $ne: employeeId },
+        excludeEmployeeId: employeeId,
       });
-
-      if (existingEmployee) {
-        const error = new Error('Employee with this email already exists');
-        error.statusCode = 409;
+      if (!emailCheck.ok) {
+        const error = new Error(emailCheck.message);
+        error.statusCode = emailCheck.code === 'EMAIL_IN_USE' ? 409 : 400;
+        error.code = emailCheck.code;
         throw error;
       }
+      data.email = emailCheck.email;
     }
 
     // Check if updating employee number, ensure no duplicates within company
@@ -555,13 +564,105 @@ class EmployeeService {
       await employee.save();
     }
 
-    // Deactivate all site assignments
-    await EmployeeSite.updateMany(
-      { employeeId, companyId },
-      { isActive: false, unassignedAt: new Date() }
+    // Cascade-cancel every future SCHEDULED shift so gaps become visible to
+    // the admin and the absence-detection cron does not chase a deleted
+    // employee. Past and completed shifts stay intact for payroll/audit.
+    const Shift = require('../models/Shift');
+    const cancellation = await Shift.updateMany(
+      {
+        employeeId,
+        companyId,
+        status: 'SCHEDULED',
+        startTime: { $gt: new Date() },
+        deletedAt: null,
+      },
+      {
+        $set: {
+          status: 'CANCELLED',
+          reviewNote: 'Auto-cancelled: employee removed from the roster',
+          reviewedBy: userId,
+          reviewedAt: new Date(),
+        },
+      }
     );
 
-    return { success: true, message: 'Employee deleted successfully' };
+    // Deactivate all site assignments so the employee stops appearing on any
+    // site's roster. Stamped with the deletion timestamp so restoreEmployee
+    // can identify exactly which assignments to reactivate.
+    const deletedAt = employee.deletedAt || new Date();
+    await EmployeeSite.updateMany(
+      { employeeId, companyId, isActive: true },
+      { isActive: false, unassignedAt: deletedAt }
+    );
+
+    return {
+      success: true,
+      message: 'Employee deleted successfully',
+      cancelledShifts: cancellation.modifiedCount || 0,
+    };
+  }
+
+  /**
+   * Restore a soft-deleted employee. Clears deletedAt so the employee record
+   * comes back with all their profile data. Does NOT restore:
+   *   - Cancelled shifts    — those were cover arrangements the admin made
+   *                           after removal; reinstating them would create
+   *                           duplicate roster entries.
+   *   - Site assignments    — reactivated only if their unassignedAt matches
+   *                           the deletion timestamp within a small window,
+   *                           i.e. they were deactivated by delete rather
+   *                           than by an explicit earlier unassignment.
+   */
+  async restoreEmployee(context, employeeId) {
+    const { companyId, userId } = context;
+
+    if (!mongoose.Types.ObjectId.isValid(employeeId)) {
+      const error = new Error('Invalid employee ID');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Bypass softDelete's default query filter so we can find the deleted row.
+    const employee = await Employee.findOne({ _id: employeeId, companyId })
+      .setOptions({ _bypassSoftDelete: true });
+
+    if (!employee) {
+      const error = new Error('Employee not found');
+      error.statusCode = 404;
+      throw error;
+    }
+    if (!employee.deletedAt) {
+      const error = new Error('Employee is not deleted');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    const deletionTime = new Date(employee.deletedAt);
+    employee.deletedAt = null;
+    employee.deletedBy = null;
+    employee.updatedBy = userId;
+    await employee.save();
+
+    // Reactivate only the site assignments that were closed as part of the
+    // delete — matched by unassignedAt sitting within a one-minute window of
+    // the deletion timestamp. Assignments the admin ended earlier stay ended.
+    const windowStart = new Date(deletionTime.getTime() - 60 * 1000);
+    const windowEnd = new Date(deletionTime.getTime() + 60 * 1000);
+    const restored = await EmployeeSite.updateMany(
+      {
+        employeeId,
+        companyId,
+        isActive: false,
+        unassignedAt: { $gte: windowStart, $lte: windowEnd },
+      },
+      { $set: { isActive: true }, $unset: { unassignedAt: '' } }
+    );
+
+    return {
+      success: true,
+      message: 'Employee restored successfully',
+      restoredSiteAssignments: restored.modifiedCount || 0,
+    };
   }
 
   /**

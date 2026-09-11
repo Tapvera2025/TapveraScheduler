@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { MapPin, Camera, Clock, CheckCircle, XCircle, Loader2, AlertCircle, Navigation, Calendar } from 'lucide-react';
+import { MapPin, Camera, Clock, CheckCircle, XCircle, Loader2, AlertCircle, Navigation, Calendar, Coffee } from 'lucide-react';
 import { clockApi, shiftApi } from '../../lib/api';
 import { useModuleStore } from "../../store/moduleStore";
 import { MODULES } from "../../constants/modules";
@@ -28,6 +28,7 @@ export default function ClockInOut() {
   const fileInputRef = useRef(null);
 
   const [elapsedTime, setElapsedTime] = useState('');
+  const [breakElapsed, setBreakElapsed] = useState('');
   const [employeeId, setEmployeeId] = useState(null);
   // Bumped after clock-in/out so the child <ShiftAccessCodes> re-fetches
   // and any afterClockingIn-gated codes reveal.
@@ -65,6 +66,45 @@ export default function ClockInOut() {
       return () => clearInterval(interval);
     }
   }, [clockStatus]);
+
+  // Break elapsed timer
+  useEffect(() => {
+    const onBreak = clockStatus?.onBreak;
+    const breaks = clockStatus?.breaks || [];
+    if (!onBreak || !breaks.length) { setBreakElapsed(''); return; }
+    const lastBreakStart = new Date(breaks[breaks.length - 1].startTime);
+    const interval = setInterval(() => {
+      const diff = new Date() - lastBreakStart;
+      const m = Math.floor(diff / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setBreakElapsed(`${m}m ${s}s`);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [clockStatus]);
+
+  const handleStartBreak = async () => {
+    setError(null); setSuccess(null);
+    try {
+      setLoading(true);
+      const response = await clockApi.startBreak(employeeId);
+      setClockStatus(response.data.data);
+      setSuccess('Break started.');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to start break');
+    } finally { setLoading(false); }
+  };
+
+  const handleEndBreak = async () => {
+    setError(null); setSuccess(null);
+    try {
+      setLoading(true);
+      const response = await clockApi.endBreak(employeeId);
+      setClockStatus(response.data.data);
+      setSuccess('Break ended. Welcome back!');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to end break');
+    } finally { setLoading(false); }
+  };
 
   const fetchCurrentStatus = async (id) => {
     const resolvedId = id || employeeId;
@@ -239,6 +279,7 @@ export default function ClockInOut() {
   }
 
   const isClockedIn = clockStatus !== null;
+  const onBreak = clockStatus?.onBreak ?? false;
   const hasShiftsToday = todayShifts.length > 0;
 
   return (
@@ -253,15 +294,39 @@ export default function ClockInOut() {
 
         {/* Currently Clocked In */}
         {isClockedIn && (
-          <div className="border border-[hsl(var(--color-success))]/30 bg-[hsl(var(--color-success))]/10 rounded-lg p-6 mb-6">
+          <div className={`border rounded-lg p-6 mb-6 ${clockStatus.onBreak ? 'border-[hsl(var(--color-warning))]/30 bg-[hsl(var(--color-warning))]/10' : 'border-[hsl(var(--color-success))]/30 bg-[hsl(var(--color-success))]/10'}`}>
             <div className="flex items-start gap-3">
-              <CheckCircle className="w-6 h-6 text-[hsl(var(--color-success))] mt-0.5 flex-shrink-0" />
+              {clockStatus.onBreak
+                ? <Coffee className="w-6 h-6 text-[hsl(var(--color-warning))] mt-0.5 flex-shrink-0" />
+                : <CheckCircle className="w-6 h-6 text-[hsl(var(--color-success))] mt-0.5 flex-shrink-0" />
+              }
               <div className="flex-1">
-                <h2 className="text-lg font-semibold text-[hsl(var(--color-foreground))] mb-2">Currently Clocked In</h2>
-                <div className="space-y-1 text-sm text-[hsl(var(--color-foreground-secondary))]">
+                <div className="flex items-center justify-between gap-4">
+                  <h2 className="text-lg font-semibold text-[hsl(var(--color-foreground))]">
+                    {clockStatus.onBreak ? 'On Break' : 'Currently Clocked In'}
+                  </h2>
+                  <button
+                    onClick={clockStatus.onBreak ? handleEndBreak : handleStartBreak}
+                    disabled={loading}
+                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 ${
+                      clockStatus.onBreak
+                        ? 'bg-[hsl(var(--color-success))] text-[hsl(var(--color-success-foreground))] hover:opacity-90'
+                        : 'bg-[hsl(var(--color-warning-soft))] text-[hsl(var(--color-warning))] border border-[hsl(var(--color-warning))]/30 hover:bg-[hsl(var(--color-warning))]/20'
+                    }`}
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : clockStatus.onBreak ? 'End Break' : 'Take Break'}
+                  </button>
+                </div>
+                <div className="space-y-1 text-sm text-[hsl(var(--color-foreground-secondary))] mt-2">
                   <p><span className="font-medium text-[hsl(var(--color-foreground))]">Site:</span> {clockStatus.siteId?.siteLocationName || 'N/A'}</p>
                   <p><span className="font-medium text-[hsl(var(--color-foreground))]">Clock In Time:</span> {orgDateTime(clockStatus.clockInTime)}</p>
                   <p><span className="font-medium text-[hsl(var(--color-foreground))]">Elapsed Time:</span> {elapsedTime}</p>
+                  {clockStatus.onBreak && breakElapsed && (
+                    <p><span className="font-medium text-[hsl(var(--color-warning))]">Break Duration:</span> {breakElapsed}</p>
+                  )}
+                  {(clockStatus.breakMins > 0) && (
+                    <p><span className="font-medium text-[hsl(var(--color-foreground))]">Total Break:</span> {clockStatus.breakMins}m</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -494,17 +559,22 @@ export default function ClockInOut() {
                   )}
                 </button>
               ) : (
-                <button
-                  onClick={handleClockOut}
-                  disabled={loading || !location}
-                  className="w-full py-4 bg-[hsl(var(--color-error))] text-[hsl(var(--color-error-foreground))] rounded-lg font-semibold text-lg hover:bg-[hsl(var(--color-error))] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
-                >
-                  {loading ? (
-                    <><Loader2 className="w-6 h-6 animate-spin" />Clocking Out...</>
-                  ) : (
-                    <><Clock className="w-6 h-6" />Clock Out</>
+                <div className="space-y-2">
+                  {onBreak && (
+                    <p className="text-xs text-center text-[hsl(var(--color-warning))]">End your break before clocking out.</p>
                   )}
-                </button>
+                  <button
+                    onClick={handleClockOut}
+                    disabled={loading || !location || onBreak}
+                    className="w-full py-4 bg-[hsl(var(--color-error))] text-[hsl(var(--color-error-foreground))] rounded-lg font-semibold text-lg hover:bg-[hsl(var(--color-error))] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+                  >
+                    {loading ? (
+                      <><Loader2 className="w-6 h-6 animate-spin" />Clocking Out...</>
+                    ) : (
+                      <><Clock className="w-6 h-6" />Clock Out</>
+                    )}
+                  </button>
+                </div>
               )}
             </div>
           </div>
