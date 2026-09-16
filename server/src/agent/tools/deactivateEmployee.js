@@ -1,7 +1,25 @@
+/**
+ * deactivateEmployee — soft-delete an employee from the organisation.
+ *
+ * Cascade effects: all future SCHEDULED shifts are auto-cancelled and all
+ * site assignments are deactivated. Past shifts are kept for payroll/audit.
+ *
+ * prepare counts upcoming shifts so the admin sees the blast radius before
+ * confirming. commit re-reads the count via the service, which is authoritative.
+ *
+ * Roles: ADMIN only. Managers may not deactivate people; that decision requires
+ * an admin. The service enforces no role check itself, so this tool is the gate.
+ *
+ * Edge case: if the employee is already soft-deleted, resolveEmployeeRef throws
+ * NOT_FOUND (the softDelete plugin filters deletedAt: null). The "already
+ * deactivated" case is intentionally surfaced as NOT_FOUND — attempting to
+ * deactivate a deleted record is not a meaningful operation.
+ */
+
 const Shift = require('../../models/Shift');
 const employeeService = require('../../services/employee.service');
 const { resolveEmployeeRef } = require('../resolver');
-const { invalidInput } = require('../errors');
+const { invalidInput, notFound } = require('../errors');
 
 const parameters = {
   type: 'object',
@@ -49,10 +67,16 @@ const prepare = async ({ actor, input }) => {
 const commit = async ({ actor, draft }) => {
   const { employeeId } = draft.plan;
 
-  const result = await employeeService.deleteEmployee(
-    { companyId: actor.companyId, userId: actor.userId, role: actor.role },
-    employeeId
-  );
+  let result;
+  try {
+    result = await employeeService.deleteEmployee(
+      { companyId: actor.companyId, userId: actor.userId, role: actor.role },
+      employeeId
+    );
+  } catch (err) {
+    if (err.statusCode === 404) throw notFound('That employee no longer exists', { entity: 'employee' });
+    throw err;
+  }
 
   return {
     data: { employeeId, cancelledShifts: result.cancelledShifts },
