@@ -1,3 +1,11 @@
+/**
+ * updateClient — rename a client or update their state.
+ *
+ * build() is shared by prepare and commit so the world is re-validated at
+ * confirmation time. The service re-checks clientName uniqueness; build checks
+ * it early so the preview can explain the problem before the admin confirms.
+ */
+
 const mongoose = require('mongoose');
 const Client = require('../../models/Client');
 const clientService = require('../../services/client.service');
@@ -46,6 +54,9 @@ const build = async (actor, input) => {
   }
 
   if (updates.clientName) {
+    if (updates.clientName === client.name) {
+      throw invalidInput(`That is already the client's name`);
+    }
     const existing = await Client.findOne({
       clientName: updates.clientName,
       companyId: actor.companyId,
@@ -60,6 +71,9 @@ const build = async (actor, input) => {
 };
 
 const prepare = async ({ actor, input }) => {
+  if (!input.clientName && !input.clientId) {
+    throw invalidInput('Which client should I update? Give a name or id.');
+  }
   const { client, updates } = await build(actor, input);
 
   return {

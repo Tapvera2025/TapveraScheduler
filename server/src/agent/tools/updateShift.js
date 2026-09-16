@@ -190,13 +190,23 @@ const commit = async ({ actor, draft }) => {
   const { shift, updates, instants } = await build(actor, draft.input);
   const shiftId = shift._id.toString();
 
-  if (instants) {
-    if (
-      instants.startTime.toISOString() !== draft.plan.startTime ||
-      instants.endTime.toISOString() !== draft.plan.endTime
-    ) {
-      throw conflict('The shift times changed since it was previewed. Please review it again.');
-    }
+  // Re-derive the full plan and compare against what the admin approved, so
+  // a replay of different draft.input cannot silently write different data.
+  const rebuiltPlan = {
+    shiftId,
+    ...(instants
+      ? {
+          startTime: instants.startTime.toISOString(),
+          endTime: instants.endTime.toISOString(),
+          dateInstant: instants.dateInstant.toISOString(),
+        }
+      : {}),
+    ...(updates.shiftType ? { shiftType: updates.shiftType } : {}),
+    ...(updates.breakDuration !== undefined ? { breakDuration: updates.breakDuration } : {}),
+  };
+  const drifted = Object.keys(draft.plan).some((k) => String(rebuiltPlan[k]) !== String(draft.plan[k]));
+  if (drifted) {
+    throw conflict('The shift details changed since it was previewed. Please review it again.');
   }
 
   try {

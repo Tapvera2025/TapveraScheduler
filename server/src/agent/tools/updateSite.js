@@ -55,6 +55,14 @@ const build = async (actor, input) => {
     throw invalidInput('What should be changed? Provide a new name, short name, or timezone.');
   }
 
+  if (updates.timezone) {
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone: updates.timezone });
+    } catch {
+      throw invalidInput(`"${updates.timezone}" is not a valid IANA timezone (e.g. "Australia/Sydney")`);
+    }
+  }
+
   if (updates.shortName) {
     const existing = await Site.findOne({
       shortName: updates.shortName,
