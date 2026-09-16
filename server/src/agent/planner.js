@@ -57,7 +57,7 @@ const stripReserved = (args) => {
   return clean;
 };
 
-const RETRIABLE_CODES = new Set(['ECONNABORTED', 'ECONNRESET', 'ECONNREFUSED']);
+const RETRIABLE_CODES = new Set(['ECONNABORTED', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT']);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -115,9 +115,15 @@ const callGroq = async ({ messages, tools }) => {
         err._retriable = true;
         throw err;
       }
+      if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+        logger.warn('Planner [groq] request timed out', { code: error.code });
+        const err = new AgentError(CODES.TIMEOUT, 'The assistant took too long to answer.');
+        err._retriable = true;
+        throw err;
+      }
       if (RETRIABLE_CODES.has(error.code)) {
         logger.warn('Planner [groq] network error', { code: error.code });
-        const err = new AgentError(CODES.TIMEOUT, 'The assistant took too long to answer.');
+        const err = plannerUnavailable('The assistant is unreachable right now.');
         err._retriable = true;
         throw err;
       }
