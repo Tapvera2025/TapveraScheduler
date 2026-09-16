@@ -19,6 +19,11 @@ const cancelShift = require('./tools/cancelShift');
 const createEmployee = require('./tools/createEmployee');
 const createClient = require('./tools/createClient');
 const createSite = require('./tools/createSite');
+const updateEmployee = require('./tools/updateEmployee');
+const deactivateEmployee = require('./tools/deactivateEmployee');
+const updateClient = require('./tools/updateClient');
+const updateSite = require('./tools/updateSite');
+const updateShift = require('./tools/updateShift');
 
 const TOOLS = [
   // Reads — ordered by frequency of use
@@ -32,6 +37,11 @@ const TOOLS = [
   createEmployee,
   createClient,
   createSite,
+  updateEmployee,
+  deactivateEmployee,
+  updateClient,
+  updateSite,
+  updateShift,
 ];
 
 const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
