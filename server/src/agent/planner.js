@@ -164,10 +164,12 @@ const plan = async ({ actor, message, history = [] }) => {
   if (text.length > MAX_MESSAGE_CHARS) throw invalidInput('That request is too long');
 
   const t0 = Date.now();
+  // Skip preResolve for entity-free patterns — no DB call needed.
+  const rawRoute = intentRouter.routeEntityFree(text);
   const [tools, company, enrichedText] = await Promise.all([
     availableTools(actor),
     getCompanyProfile(actor.companyId),
-    preResolve(actor, text),
+    rawRoute ? Promise.resolve(text) : preResolve(actor, text),
   ]);
   const tResolved = Date.now();
 
