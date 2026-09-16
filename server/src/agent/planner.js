@@ -57,258 +57,87 @@ const stripReserved = (args) => {
   return clean;
 };
 
-const callProvider = async ({ apiKey, baseUrl, model, messages, tools, timeoutMs, maxOutputTokens, label }) => {
-  try {
-    const { data } = await axios.post(
-      `${baseUrl}/chat/completions`,
-      {
-        model,
-        messages,
-        // Only the OpenAI-compatible `function` half goes to the provider;
-        // `kind` and `required` are ours, for the UI.
-        tools: tools.map((t) => ({ type: 'function', function: t.function })),
-        tool_choice: 'auto',
-        temperature: 0,
-        max_tokens: maxOutputTokens,
-      },
-      {
-        timeout: timeoutMs,
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-    return data;
-  } catch (error) {
-    const status = error.response?.status;
-    const providerMsg =
-      error.response?.data?.error?.message ||
-      error.response?.data?.error ||
-      error.response?.data?.msg ||
-      JSON.stringify(error.response?.data || {}).slice(0, 300);
+const RETRIABLE_CODES = new Set(['ECONNABORTED', 'ECONNRESET', 'ECONNREFUSED']);
 
-    if (status === 401 || status === 403) {
-      logger.error(`Planner [${label}] rejected by provider`, { status, providerMsg, model });
-      const err = plannerUnavailable(`The assistant is not configured correctly (${label}). Check the API key.`);
-      err._retriable = false;
-      throw err;
-    }
-    if (status === 429) {
-      logger.warn(`Planner [${label}] rate limited`, { model });
-      const err = plannerUnavailable(`The assistant is rate limited right now (${label}). Try again shortly.`);
-      err._retriable = true;
-      throw err;
-    }
-    if (status === 404) {
-      logger.error(`Planner [${label}] model not found`, { model, baseUrl, providerMsg });
-      const err = plannerUnavailable(`The assistant model "${model}" is not available on this account (${label}).`);
-      err._retriable = false;
-      throw err;
-    }
-    if (error.code === 'ECONNABORTED') {
-      const err = new AgentError(CODES.TIMEOUT, `The assistant took too long to answer (${label}).`);
-      err._retriable = true;
-      throw err;
-    }
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    logger.error(`Planner [${label}] request failed`, { status, error: error.message, model });
-    const err = plannerUnavailable(`The assistant is unavailable right now (${label}).`);
-    err._retriable = true;
-    throw err;
-  }
-};
-
-/**
- * Strip Gemini-incompatible keywords from a JSON schema. Gemini's schema
- * validator rejects `additionalProperties`, `$schema`, and a couple of other
- * OpenAI/JSON-Schema conveniences. Recurses through nested schemas.
- */
-const cleanForGemini = (schema) => {
-  if (!schema || typeof schema !== 'object') return schema;
-  if (Array.isArray(schema)) return schema.map(cleanForGemini);
-  const out = {};
-  Object.entries(schema).forEach(([k, v]) => {
-    if (k === 'additionalProperties' || k === '$schema') return;
-    out[k] = cleanForGemini(v);
-  });
-  return out;
-};
-
-/**
- * Call Google Gemini with function-calling and return an OpenAI-shaped
- * response, so the rest of planner.js does not need to know which provider
- * answered. Gemini uses different envelope names — `contents` instead of
- * `messages`, `functionDeclarations` instead of `function`, `functionCall`
- * instead of `tool_calls` — so the shape conversion happens here.
- */
-const callGemini = async ({ messages, tools, timeoutMs, maxOutputTokens }) => {
-  const { apiKey, baseUrl, model } = config.agent.gemini;
-
-  const systemMessages = messages.filter((m) => m.role === 'system');
-  const chatMessages = messages.filter((m) => m.role !== 'system');
-
-  const contents = chatMessages.map((m) => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: String(m.content || '') }],
-  }));
-
-  const functionDeclarations = tools.map((t) => ({
-    name: t.function.name,
-    description: t.function.description,
-    parameters: cleanForGemini(t.function.parameters),
-  }));
+const callGroq = async ({ messages, tools }) => {
+  const { apiKey, plannerModel, baseUrl, timeoutMs, maxOutputTokens } = config.agent.groq;
 
   const body = {
-    contents,
-    tools: [{ functionDeclarations }],
-    toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
-    generationConfig: {
-      temperature: 0,
-      maxOutputTokens,
-    },
+    model: plannerModel,
+    messages,
+    tools: tools.map((t) => ({ type: 'function', function: t.function })),
+    tool_choice: 'auto',
+    temperature: 0,
+    max_tokens: maxOutputTokens,
   };
-  if (systemMessages.length) {
-    body.systemInstruction = {
-      parts: [{ text: systemMessages.map((m) => m.content).join('\n\n') }],
-    };
-  }
 
-  let raw;
-  try {
-    const { data } = await axios.post(
-      `${baseUrl}/models/${model}:generateContent`,
-      body,
-      {
-        params: { key: apiKey },
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  };
+
+  const attempt = async () => {
+    try {
+      const { data } = await axios.post(`${baseUrl}/chat/completions`, body, {
         timeout: timeoutMs,
-        headers: { 'Content-Type': 'application/json' },
-      }
-    );
-    raw = data;
-  } catch (error) {
-    const status = error.response?.status;
-    const providerMsg =
-      error.response?.data?.error?.message ||
-      JSON.stringify(error.response?.data || {}).slice(0, 300);
-
-    if (status === 401 || status === 403) {
-      logger.error('Planner [gemini] rejected by provider', { status, providerMsg, model });
-      const err = plannerUnavailable('The assistant is not configured correctly (gemini). Check the API key.');
-      err._retriable = false;
-      throw err;
-    }
-    if (status === 429) {
-      logger.warn('Planner [gemini] rate limited', { model });
-      const err = plannerUnavailable('The assistant is rate limited right now (gemini). Try again shortly.');
-      err._retriable = true;
-      throw err;
-    }
-    if (status === 404) {
-      logger.error('Planner [gemini] model not found', { model, providerMsg });
-      const err = plannerUnavailable(`The assistant model "${model}" is not available (gemini).`);
-      err._retriable = false;
-      throw err;
-    }
-    if (error.code === 'ECONNABORTED') {
-      const err = new AgentError(CODES.TIMEOUT, 'The assistant took too long to answer (gemini).');
-      err._retriable = true;
-      throw err;
-    }
-
-    logger.error('Planner [gemini] request failed', { status, error: error.message, model });
-    const err = plannerUnavailable('The assistant is unavailable right now (gemini).');
-    err._retriable = true;
-    throw err;
-  }
-
-  // Convert Gemini's response envelope into the OpenAI shape the caller expects.
-  const parts = raw?.candidates?.[0]?.content?.parts || [];
-  const textParts = parts.filter((p) => typeof p.text === 'string').map((p) => p.text);
-  const funcCall = parts.find((p) => p.functionCall)?.functionCall;
-
-  const openAiChoice = {
-    message: {
-      content: textParts.join('').trim(),
-      tool_calls: funcCall
-        ? [{
-            id: `gemini_${Date.now()}`,
-            type: 'function',
-            function: {
-              name: funcCall.name,
-              arguments: JSON.stringify(funcCall.args || {}),
-            },
-          }]
-        : undefined,
-    },
-  };
-
-  return {
-    choices: [openAiChoice],
-    usage: {
-      prompt_tokens: raw?.usageMetadata?.promptTokenCount ?? null,
-      completion_tokens: raw?.usageMetadata?.candidatesTokenCount ?? null,
-    },
-    model,
-  };
-};
-
-/** Dispatch: Gemini if configured, else GPT primary, else Grok fallback. */
-const callGrok = async ({ messages, tools }) => {
-  const { gemini, primary, fallback, timeoutMs, maxOutputTokens } = config.agent;
-
-  // Preferred: Google Gemini
-  if (gemini.apiKey) {
-    try {
-      return await callGemini({ messages, tools, timeoutMs, maxOutputTokens });
-    } catch (geminiErr) {
-      const hasBackup = primary.apiKey || fallback.apiKey;
-      if (!hasBackup) throw geminiErr;
-      if (!geminiErr._retriable) {
-        logger.error('Planner Gemini hard failure — trying OpenAI chain', { message: geminiErr.message });
-      } else {
-        logger.warn('Planner Gemini failed — trying OpenAI chain', { message: geminiErr.message });
-      }
-    }
-  }
-
-  // Primary: OpenAI GPT
-  if (primary.apiKey) {
-    try {
-      return await callProvider({
-        ...primary,
-        messages,
-        tools,
-        timeoutMs,
-        maxOutputTokens,
-        label: 'gpt',
+        headers,
       });
-    } catch (primaryErr) {
-      if (!primaryErr._retriable && primary.apiKey) {
-        logger.error('Planner primary (GPT) hard failure — trying fallback', {
-          message: primaryErr.message,
-        });
-      } else {
-        logger.warn('Planner primary (GPT) failed — trying fallback', {
-          message: primaryErr.message,
-        });
+      return data;
+    } catch (error) {
+      const status = error.response?.status;
+      const providerMsg =
+        error.response?.data?.error?.message ||
+        JSON.stringify(error.response?.data || {}).slice(0, 300);
+
+      if (status === 401 || status === 403) {
+        logger.error('Planner [groq] auth failure', { status, providerMsg, model: plannerModel });
+        const err = plannerUnavailable('The assistant is not configured correctly. Check GROQ_API_KEY.');
+        err._retriable = false;
+        throw err;
       }
+      if (status === 404) {
+        logger.error('Planner [groq] model not found', { model: plannerModel, providerMsg });
+        const err = plannerUnavailable(`The assistant model "${plannerModel}" is not available on this Groq account.`);
+        err._retriable = false;
+        throw err;
+      }
+      if (status === 400 || status === 422) {
+        logger.error('Planner [groq] bad request', { status, providerMsg });
+        const err = plannerUnavailable('The assistant received an invalid request.');
+        err._retriable = false;
+        throw err;
+      }
+      if (status === 429) {
+        logger.warn('Planner [groq] rate limited', { model: plannerModel });
+        const err = plannerUnavailable('The assistant is rate limited right now. Try again shortly.');
+        err._retriable = true;
+        throw err;
+      }
+      if (RETRIABLE_CODES.has(error.code)) {
+        logger.warn('Planner [groq] network error', { code: error.code });
+        const err = new AgentError(CODES.TIMEOUT, 'The assistant took too long to answer.');
+        err._retriable = true;
+        throw err;
+      }
+
+      logger.error('Planner [groq] request failed', { status, error: error.message, model: plannerModel });
+      const err = plannerUnavailable('The assistant is unavailable right now.');
+      err._retriable = true;
+      throw err;
     }
-  }
+  };
 
-  // Fallback: Grok / PLANNER_*
-  if (fallback.apiKey) {
-    return await callProvider({
-      ...fallback,
-      messages,
-      tools,
-      timeoutMs,
-      maxOutputTokens,
-      label: 'grok-fallback',
-    });
+  try {
+    return await attempt();
+  } catch (firstErr) {
+    if (!firstErr._retriable) throw firstErr;
+    const backoff = 500 + Math.floor(Math.random() * 500);
+    logger.warn('Planner [groq] retrying', { backoffMs: backoff, reason: firstErr.message });
+    await sleep(backoff);
+    return await attempt();
   }
-
-  throw plannerUnavailable('The assistant is unavailable right now. You can still use the form.');
 };
 
 /**
@@ -388,7 +217,7 @@ const plan = async ({ actor, message, history = [] }) => {
   ];
 
   const tLlmStart = Date.now();
-  const response = await callGrok({ messages, tools });
+  const response = await callGroq({ messages, tools });
   const tLlmEnd = Date.now();
   const choice = response?.choices?.[0];
   const assistantMessage = choice?.message?.content?.trim() || '';
@@ -397,7 +226,7 @@ const plan = async ({ actor, message, history = [] }) => {
   const usage = {
     promptTokens: response?.usage?.prompt_tokens ?? null,
     completionTokens: response?.usage?.completion_tokens ?? null,
-    model: response?.model || config.agent.primary.model,
+    model: response?.model || config.agent.groq.plannerModel,
   };
 
   const pipeline = {
