@@ -122,7 +122,7 @@ const routeRead = (text) => {
   }
 
   // getDailySummary — "who is working today", "show today's roster"
-  if (/who.{0,25}work|today.{0,20}roster|roster.{0,20}today|daily.{0,20}summ|show.{0,20}roster|today.{0,20}(schedule|shifts?)|who.{0,15}on.{0,15}today|on\s+shift.{0,15}today|staff.{0,20}(schedule|roster).{0,15}today/i.test(lower)) {
+  if (/who.{0,25}work|today.{0,20}roster|roster.{0,20}today|daily.{0,20}summ|show.{0,20}roster|today.{0,20}shifts?|who.{0,15}on.{0,15}today|on\s+shift.{0,15}today|staff.{0,20}roster.{0,15}today/i.test(lower)) {
     const input = {};
     if (ex.date) input.date = ex.date;
     else if (ex.from && !ex.to) input.date = ex.from;
@@ -201,7 +201,7 @@ const routeEntityFree = (text) => {
   const lower = text.toLowerCase();
 
   // getDailySummary — entity-free: any daily roster query without a named person
-  if (/who.{0,25}work|today.{0,20}roster|roster.{0,20}today|daily.{0,20}summ|show.{0,20}roster|today.{0,20}(schedule|shifts?)|who.{0,15}on.{0,15}today|on\s+shift.{0,15}today|staff.{0,20}(schedule|roster).{0,15}today/i.test(lower)) {
+  if (/who.{0,25}work|today.{0,20}roster|roster.{0,20}today|daily.{0,20}summ|show.{0,20}roster|today.{0,20}shifts?|who.{0,15}on.{0,15}today|on\s+shift.{0,15}today|staff.{0,20}roster.{0,15}today/i.test(lower)) {
     return { tool: 'getDailySummary', input: {} };
   }
 
