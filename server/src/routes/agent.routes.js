@@ -14,8 +14,6 @@ const router = express.Router();
 const asyncHandler = require('../utils/asyncHandler');
 const config = require('../config');
 const logger = require('../utils/logger');
-const Employee = require('../models/Employee');
-const Site = require('../models/Site');
 const {
   actorFromRequest,
   plan,
@@ -295,76 +293,35 @@ router.post(
       return res.status(400).json({ ok: false, error: { code: CODES.INVALID_INPUT, message: 'No audio received' } });
     }
 
-    const geminiKey = config.agent.gemini.apiKey;
-    // Legacy Groq path used to reach for `config.agent.apiKey`, which the
-    // current config does not expose. Preserve the flat name as a backup so a
-    // GROQ_API_KEY env can still work if someone sets it deliberately.
-    const groqKey = process.env.GROQ_API_KEY || '';
+    const { apiKey, sttModel, baseUrl } = config.agent.groq;
 
-    if (!geminiKey && !groqKey) {
+    if (!apiKey) {
       return res.status(503).json({ ok: false, error: { code: CODES.PLANNER_UNAVAILABLE, message: 'Transcription is not configured' } });
     }
 
+    const form = new FormData();
+    form.append('file', req.file.buffer, {
+      filename: 'audio.webm',
+      contentType: req.file.mimetype || 'audio/webm',
+    });
+    form.append('model', sttModel);
+    form.append('language', 'en');
+
     let raw = '';
-
-    if (geminiKey) {
-      // Gemini transcription: send the audio inline (base64) with a prompt
-      // asking for verbatim transcription. Gemini 2.0 Flash accepts audio via
-      // inlineData in generateContent.
-      const { baseUrl, model } = config.agent.gemini;
-      const mimeType = req.file.mimetype || 'audio/webm';
-      const base64 = req.file.buffer.toString('base64');
-      try {
-        const { data } = await axios.post(
-          `${baseUrl}/models/${model}:generateContent`,
-          {
-            contents: [{
-              role: 'user',
-              parts: [
-                { inlineData: { mimeType, data: base64 } },
-                { text: 'Transcribe this audio verbatim. Return ONLY the spoken words in plain English text, with no commentary, no punctuation guessing beyond what was said, and no formatting.' },
-              ],
-            }],
-            generationConfig: { temperature: 0, maxOutputTokens: 500 },
-          },
-          {
-            params: { key: geminiKey },
-            headers: { 'Content-Type': 'application/json' },
-            timeout: 20000,
-          }
-        );
-        const parts = data?.candidates?.[0]?.content?.parts || [];
-        raw = parts.map((p) => p.text || '').join('').trim();
-      } catch (error) {
-        const status = error.response?.status;
-        const providerMsg = error.response?.data?.error?.message || error.message;
-        logger.error('Gemini transcription failed', { status, error: providerMsg });
-        return res.status(500).json({ ok: false, error: { code: CODES.INTERNAL, message: 'Transcription failed. Try typing instead.' } });
-      }
-    } else {
-      const form = new FormData();
-      form.append('file', req.file.buffer, {
-        filename: 'audio.webm',
-        contentType: req.file.mimetype || 'audio/webm',
-      });
-      form.append('model', 'whisper-large-v3');
-      form.append('language', 'en');
-
-      try {
-        const { data } = await axios.post(
-          'https://api.groq.com/openai/v1/audio/transcriptions',
-          form,
-          {
-            headers: { Authorization: `Bearer ${groqKey}`, ...form.getHeaders() },
-            timeout: 20000,
-          }
-        );
-        raw = (data.text || '').trim();
-      } catch (error) {
-        const status = error.response?.status;
-        logger.error('Whisper transcription failed', { status, error: error.message });
-        return res.status(500).json({ ok: false, error: { code: CODES.INTERNAL, message: 'Transcription failed. Try typing instead.' } });
-      }
+    try {
+      const { data } = await axios.post(
+        `${baseUrl}/audio/transcriptions`,
+        form,
+        {
+          headers: { Authorization: `Bearer ${apiKey}`, ...form.getHeaders() },
+          timeout: 20000,
+        }
+      );
+      raw = (data.text || '').trim();
+    } catch (error) {
+      const status = error.response?.status;
+      logger.error('Whisper transcription failed', { status, error: error.message });
+      return res.status(500).json({ ok: false, error: { code: CODES.INTERNAL, message: 'Transcription failed. Try typing instead.' } });
     }
 
     pipeline.stt_end = Date.now();
@@ -401,15 +358,15 @@ router.post(
       return res.status(400).json({ ok: false, error: { code: CODES.INVALID_INPUT, message: 'text is required' } });
     }
 
-    const { apiKey } = config.agent;
+    const { apiKey, ttsModel, baseUrl } = config.agent.groq;
     if (!apiKey) {
       return res.status(503).json({ ok: false, error: { code: CODES.PLANNER_UNAVAILABLE, message: 'TTS is not configured' } });
     }
 
     try {
       const { data, headers } = await axios.post(
-        'https://api.groq.com/openai/v1/audio/speech',
-        { model: 'canopylabs/orpheus-v1-english', input: text.trim().slice(0, 4096), voice: 'tara' },
+        `${baseUrl}/audio/speech`,
+        { model: ttsModel, input: text.trim().slice(0, 4096), voice: 'tara' },
         {
           headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           responseType: 'arraybuffer',
