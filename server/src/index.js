@@ -221,8 +221,8 @@ const startServer = async () => {
       // identical to one that is broken, and the difference is one env var.
       logger.info(
         config.agent.enabled
-          ? `✓ Agent planner ready (${config.agent.model})`
-          : '○ Agent planner disabled - no XAI_API_KEY loaded. The assistant will only accept the typed form.'
+          ? `✓ Agent provider ready (Groq / ${config.agent.groq.plannerModel})`
+          : '○ Agent disabled — set GROQ_API_KEY in .env. The assistant will only accept the typed form.'
       );
 
       if (config.isDevelopment()) {
