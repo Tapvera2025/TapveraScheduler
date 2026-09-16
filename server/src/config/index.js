@@ -82,32 +82,13 @@ const envSchema = Joi.object({
   OPENWEATHER_API_KEY: Joi.string().allow('').optional(),
   GOOGLE_MAPS_API_KEY: Joi.string().allow('').optional(),
 
-  // Agent planner — Google Gemini (used for BOTH planner and transcription
-  // when configured). Preferred over the OpenAI-compatible chain below.
-  GEMINI_API_KEY: Joi.string().allow('').optional(),
-  GEMINI_BASE_URL: Joi.string().uri().default('https://generativelanguage.googleapis.com/v1beta'),
-  // flash-lite has no "thinking" overhead so it fits the sub-1s planner
-  // budget. The thinking-enabled 3.x models burn 80+ tokens per turn on
-  // internal reasoning even for trivial calls.
-  GEMINI_MODEL: Joi.string().default('gemini-3.5-flash-lite'),
-  // Agent planner — primary: OpenAI GPT
-  OPENAI_API_KEY: Joi.string().allow('').optional(),
-  OPENAI_BASE_URL: Joi.string().uri().default('https://api.openai.com/v1'),
-  OPENAI_MODEL: Joi.string().default('gpt-4o-mini'),
-  // Agent planner — fallback: Grok / any OpenAI-compatible endpoint
-  XAI_API_KEY: Joi.string().allow('').optional(),
-  XAI_BASE_URL: Joi.string().uri().default('https://api.x.ai/v1'),
-  XAI_MODEL: Joi.string().default('grok-3-mini'),
-  // Provider-neutral aliases (fallback). The planner speaks plain OpenAI
-  // chat-completions, so any compatible endpoint works.
-  PLANNER_API_KEY: Joi.string().allow('').optional(),
-  PLANNER_BASE_URL: Joi.string().uri().optional(),
-  PLANNER_MODEL: Joi.string().optional(),
-  PLANNER_TIMEOUT_MS: Joi.number().default(20000),
-  PLANNER_MAX_OUTPUT_TOKENS: Joi.number().default(300),
-  // Legacy names kept for backwards compat
-  XAI_TIMEOUT_MS: Joi.number().optional(),
-  XAI_MAX_OUTPUT_TOKENS: Joi.number().optional(),
+  // Agent — Groq (STT via whisper, planning via compound-mini, TTS via orpheus)
+  GROQ_API_KEY: Joi.string().allow('').optional(),
+  GROQ_PLANNER_MODEL: Joi.string().default('groq/compound-mini'),
+  GROQ_STT_MODEL: Joi.string().default('whisper-large-v3-turbo'),
+  GROQ_TTS_MODEL: Joi.string().default('canopylabs/orpheus-v1-english'),
+  GROQ_TIMEOUT_MS: Joi.number().default(20000),
+  GROQ_MAX_OUTPUT_TOKENS: Joi.number().default(300),
 
   // Monitoring
   SENTRY_DSN: Joi.string().uri().allow('').optional(),
@@ -211,37 +192,18 @@ const config = {
     googleMapsApiKey: envVars.GOOGLE_MAPS_API_KEY,
   },
 
-  // The planner's credentials live here and never leave the server.
+  // Agent provider credentials. Never leave the server.
   agent: {
-    // Preferred: Google Gemini. Used for both planner and audio transcription.
-    // When present, it is tried before the OpenAI-compatible chain below.
-    gemini: {
-      apiKey: envVars.GEMINI_API_KEY || '',
-      baseUrl: envVars.GEMINI_BASE_URL,
-      model: envVars.GEMINI_MODEL,
+    groq: {
+      apiKey:          envVars.GROQ_API_KEY || '',
+      plannerModel:    envVars.GROQ_PLANNER_MODEL,
+      sttModel:        envVars.GROQ_STT_MODEL,
+      ttsModel:        envVars.GROQ_TTS_MODEL,
+      baseUrl:         'https://api.groq.com/openai/v1',
+      timeoutMs:       envVars.GROQ_TIMEOUT_MS,
+      maxOutputTokens: envVars.GROQ_MAX_OUTPUT_TOKENS,
     },
-    // Primary: OpenAI GPT
-    primary: {
-      apiKey: envVars.OPENAI_API_KEY || '',
-      baseUrl: envVars.OPENAI_BASE_URL,
-      model: envVars.OPENAI_MODEL,
-    },
-    // Fallback: Grok / any OpenAI-compatible provider
-    fallback: {
-      apiKey: envVars.PLANNER_API_KEY || envVars.XAI_API_KEY || '',
-      baseUrl: envVars.PLANNER_BASE_URL || envVars.XAI_BASE_URL,
-      model: envVars.PLANNER_MODEL || envVars.XAI_MODEL,
-    },
-    timeoutMs: envVars.PLANNER_TIMEOUT_MS || envVars.XAI_TIMEOUT_MS || 20000,
-    maxOutputTokens: envVars.PLANNER_MAX_OUTPUT_TOKENS || envVars.XAI_MAX_OUTPUT_TOKENS || 300,
-    get enabled() {
-      return Boolean(
-        envVars.GEMINI_API_KEY ||
-          envVars.OPENAI_API_KEY ||
-          envVars.PLANNER_API_KEY ||
-          envVars.XAI_API_KEY
-      );
-    },
+    get enabled() { return Boolean(envVars.GROQ_API_KEY); },
   },
 
   monitoring: {
