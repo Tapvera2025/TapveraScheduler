@@ -1,3 +1,11 @@
+/**
+ * updateEmployee — change profile fields on an existing employee.
+ *
+ * build() is shared by prepare and commit so the world is re-validated at
+ * confirmation time. commit re-calls build(actor, draft.input) rather than
+ * trusting draft.plan.updates, because the employee or email state may have
+ * changed while the preview was on screen.
+ */
 const employeeService = require('../../services/employee.service');
 const Employee = require('../../models/Employee');
 const { resolveEmployeeRef } = require('../resolver');
@@ -53,10 +61,24 @@ const build = async (actor, input) => {
     }
   }
 
+  if (updates.email) {
+    // Fetch current email — resolveEmployeeRef only returns { id, name }
+    const current = await Employee.findOne({ _id: employee.id, companyId: actor.companyId })
+      .select('email')
+      .lean();
+    if (current?.email && updates.email === current.email.toLowerCase()) {
+      throw invalidInput(`That is already ${employee.name}'s email address`);
+    }
+  }
+
   return { employee, updates };
 };
 
 const prepare = async ({ actor, input }) => {
+  if (!input.employeeName && !input.employeeId) {
+    throw invalidInput('Which employee should I update? Give a name or id.');
+  }
+
   const { employee, updates } = await build(actor, input);
 
   const notes = [];
