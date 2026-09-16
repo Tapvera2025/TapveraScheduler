@@ -29,6 +29,8 @@ const WRITE_RE = /\b(create|add|schedule|book|assign|register|update|edit|change
 // purpose — "move" and "swap" imply a lookup step we cannot do here.
 const CREATE_SHIFT_VERB_RE = /\b(schedule|book|assign|roster|add\s+shift|create\s+shift|put\s+\S+\s+on)\b/i;
 
+const CANCEL_SHIFT_VERB_RE = /\b(cancel|remove|delete)\s+(?:(?:the|a|this|that)\s+)?shift\b/i;
+
 const extract = (text) => {
   const empMatch   = text.match(EMP_ID_RE);
   const siteMatch  = text.match(SITE_ID_RE);
@@ -120,7 +122,7 @@ const routeRead = (text) => {
   }
 
   // getDailySummary — "who is working today", "show today's roster"
-  if (/who.{0,25}work|today.{0,20}roster|roster.{0,20}today|daily.{0,20}summ|show.{0,20}roster/i.test(lower)) {
+  if (/who.{0,25}work|today.{0,20}roster|roster.{0,20}today|daily.{0,20}summ|show.{0,20}roster|today.{0,20}(schedule|shifts?)|who.{0,15}on.{0,15}today|on\s+shift.{0,15}today|staff.{0,20}(schedule|roster).{0,15}today/i.test(lower)) {
     const input = {};
     if (ex.date) input.date = ex.date;
     else if (ex.from && !ex.to) input.date = ex.from;
@@ -136,6 +138,11 @@ const routeRead = (text) => {
     return { tool: 'listEmployees', input };
   }
 
+  // getAttendanceReport — "attendance for archi", "clock-in report for archi"
+  if (ex.employeeId && /attendance|clock.{0,5}in|monthly.{0,10}report/i.test(lower)) {
+    return { tool: 'getAttendanceReport', input: { employeeId: ex.employeeId } };
+  }
+
   return null;
 };
 
@@ -148,6 +155,14 @@ const routeRead = (text) => {
 // fast wrong one.
 
 const routeWrite = (text) => {
+  if (CANCEL_SHIFT_VERB_RE.test(text)) {
+    const ex = extract(text);
+    // Require employeeId annotation from preResolve and a single resolved date.
+    // A date range means "cancel this whole week" — fall through to LLM.
+    if (!ex.employeeId || !ex.date || ex.from) return null;
+    return { tool: 'cancelShift', input: { employeeId: ex.employeeId, date: ex.date } };
+  }
+
   if (!CREATE_SHIFT_VERB_RE.test(text)) return null;
 
   const ex = extract(text);
@@ -176,6 +191,28 @@ const routeWrite = (text) => {
   };
 };
 
+/**
+ * Patterns that need no entity annotations (no employeeId, no siteId).
+ * Called on raw text before preResolve so we can skip the DB call entirely.
+ * Returns { tool, input } or null.
+ */
+const routeEntityFree = (text) => {
+  if (WRITE_RE.test(text)) return null;
+  const lower = text.toLowerCase();
+
+  // getDailySummary — entity-free: any daily roster query without a named person
+  if (/who.{0,25}work|today.{0,20}roster|roster.{0,20}today|daily.{0,20}summ|show.{0,20}roster|today.{0,20}(schedule|shifts?)|who.{0,15}on.{0,15}today|on\s+shift.{0,15}today|staff.{0,20}(schedule|roster).{0,15}today/i.test(lower)) {
+    return { tool: 'getDailySummary', input: {} };
+  }
+
+  // listEmployees — entity-free: any list/show employees query
+  if (/\b(list|show|get|view|all|how many).{0,20}(employees?|staff|workers?|team)\b|\bemployee\s+list\b/i.test(lower)) {
+    return { tool: 'listEmployees', input: {} };
+  }
+
+  return null;
+};
+
 const route = (text) => routeWrite(text) || routeRead(text);
 
-module.exports = { route, routeRead, routeWrite, parseTimeRange };
+module.exports = { route, routeRead, routeWrite, routeEntityFree, parseTimeRange };
