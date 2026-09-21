@@ -14,6 +14,7 @@ const getAttendanceReport = require('./tools/getAttendanceReport');
 const findEmployeeShifts = require('./tools/findEmployeeShifts');
 const getDailySummary = require('./tools/getDailySummary');
 const listEmployees = require('./tools/listEmployees');
+const listSites = require('./tools/listSites');
 const createShift = require('./tools/createShift');
 const cancelShift = require('./tools/cancelShift');
 const createEmployee = require('./tools/createEmployee');
@@ -31,6 +32,7 @@ const TOOLS = [
   findEmployeeShifts,
   getAttendanceReport,
   listEmployees,
+  listSites,
   // Writes
   createShift,
   cancelShift,
@@ -66,6 +68,17 @@ const RESERVED_KEYS = [
   'code',
 ];
 
+/**
+ * Fields a tool accepts from the app but never from the planner.
+ *
+ * Coordinates arrive from the map picker, where the admin has seen the pin.
+ * A model asked where a place is will produce plausible numbers that are a few
+ * hundred metres out, and a geofence drawn around the wrong point turns real
+ * employees away at the real site. The gateway still accepts these fields;
+ * only the planner's proposals are stripped of them.
+ */
+const PICKER_ONLY_KEYS = ['latitude', 'longitude'];
+
 const getTool = (name) => BY_NAME.get(name) || null;
 
 const listTools = () => TOOLS.map((t) => ({
@@ -98,4 +111,4 @@ const toolSchemasFor = ({ role, enabledModules = [] }) =>
       },
     }));
 
-module.exports = { TOOLS, RESERVED_KEYS, getTool, listTools, toolSchemasFor };
+module.exports = { TOOLS, RESERVED_KEYS, PICKER_ONLY_KEYS, getTool, listTools, toolSchemasFor };

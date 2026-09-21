@@ -769,6 +769,20 @@
 .agent-candidate { display: grid; gap: 2px; text-align: left; padding: 9px 11px; border-radius: 7px; border: 1px solid hsl(var(--color-border)); background: hsl(var(--color-surface)); transition: border-color .15s, background .15s; }
 .agent-candidate:hover:not(.is-static) { border-color: hsl(var(--color-primary)); background: hsl(var(--color-primary-soft)); }
 .agent-candidate.is-static { cursor: default; }
+.agent-candidate:disabled { opacity: .55; cursor: default; }
+.agent-choice-picker { display: grid; gap: 6px; }
+
+/* Geofence state inside a site preview. Unset is the case that matters — it
+   means clock-in is allowed from anywhere — so it carries the warning colour. */
+.agent-geofence { display: grid; gap: 8px; padding: 10px 11px; border-radius: 8px; border: 1px solid hsl(var(--color-border)); background: hsl(var(--color-surface)); }
+.agent-geofence.is-unset { border-color: hsl(var(--color-warning) / .45); background: hsl(var(--color-warning-soft)); }
+.agent-geofence-status { display: flex; gap: 7px; align-items: flex-start; font-size: 11px; line-height: 1.45; }
+.agent-geofence-status svg { flex-shrink: 0; margin-top: 2px; }
+.agent-geofence.is-set .agent-geofence-status svg { color: hsl(var(--color-success)); }
+.agent-geofence.is-unset .agent-geofence-status svg { color: hsl(var(--color-warning)); }
+.agent-geofence-status strong { display: block; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: hsl(var(--color-foreground-muted)); }
+.agent-geofence-search { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+.agent-geofence-problem { font-size: 10.5px; line-height: 1.45; color: hsl(var(--color-warning)); }
 .agent-candidate strong { font-size: 12px; font-weight: 600; }
 .agent-candidate span { font-size: 10px; color: hsl(var(--color-foreground-muted)); }
 
@@ -893,6 +907,17 @@
   .voice-mark rect { animation: none !important; }
 }
 .voice-debug { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; letter-spacing: .02em; color: hsl(var(--color-foreground-muted)); padding: 6px 8px; border-radius: 6px; background: hsl(var(--color-surface-elevated)); }
+
+/* Voice menu: two-option popup above the orb */
+.voice-menu { position: absolute; bottom: calc(100% + 12px); right: 0; z-index: 80; min-width: 230px; padding: 6px; border-radius: 14px; background: hsl(var(--color-card)); border: 1px solid hsl(var(--color-border-strong)); box-shadow: var(--shadow-xl), 0 0 0 1px hsl(30 10% 4% / .12); animation: voice-menu-in .18s ease-out; }
+.voice-menu-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border-radius: 10px; text-align: left; color: hsl(var(--color-foreground-secondary)); transition: background .15s, color .15s; }
+.voice-menu-item:hover { background: hsl(var(--color-primary-soft)); color: hsl(var(--color-primary)); }
+.voice-menu-item svg { flex-shrink: 0; }
+.voice-menu-text { display: grid; gap: 1px; }
+.voice-menu-text strong { font-size: 13px; font-weight: 600; color: hsl(var(--color-foreground)); }
+.voice-menu-item:hover .voice-menu-text strong { color: hsl(var(--color-primary)); }
+.voice-menu-text span { font-size: 10.5px; color: hsl(var(--color-foreground-muted)); }
+@keyframes voice-menu-in { from { opacity: 0; transform: translateY(6px) scale(.97); } to { opacity: 1; transform: none; } }
 
 /* Shared directory controls and the mobile agenda follow the dashboard rhythm. */
 .brand-caption { letter-spacing: .31em; }

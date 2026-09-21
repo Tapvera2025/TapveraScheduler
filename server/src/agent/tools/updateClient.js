@@ -9,8 +9,9 @@
 const mongoose = require('mongoose');
 const Client = require('../../models/Client');
 const clientService = require('../../services/client.service');
-const { resolveClient } = require('../resolver');
-const { invalidInput, notFound, conflict } = require('../errors');
+const { resolveClient, clientChoices } = require('../resolver');
+const { invalidInput, needsChoice, notFound, conflict } = require('../errors');
+const { statedChange } = require('../statedValue');
 
 const parameters = {
   type: 'object',
@@ -35,16 +36,23 @@ const resolveClientRef = async (actor, { clientId, clientName }) => {
     return { id: client._id.toString(), name: client.clientName };
   }
   if (clientName) return resolveClient(actor, clientName);
-  throw invalidInput('Which client? Give a name or id.', { missing: ['clientName'] });
+  const { candidates, truncated } = await clientChoices(actor);
+  if (!candidates.length) {
+    throw invalidInput('There are no clients to update yet.', { missing: ['clientName'] });
+  }
+  throw needsChoice('Which client should I update?', { entity: 'client', candidates, truncated });
 };
 
 const build = async (actor, input) => {
   const client = await resolveClientRef(actor, input);
 
   const updates = {};
-  if (input.newName !== undefined && input.newName !== null && input.newName.trim() !== '') {
-    updates.clientName = input.newName.trim();
-  }
+  const newName = statedChange(input.newName, {
+    question: 'What should the client be called?',
+    field: 'newName',
+    nouns: ['client', 'customer', 'new name'],
+  });
+  if (newName) updates.clientName = newName;
   if (input.state !== undefined && input.state !== null && input.state.trim() !== '') {
     updates.state = input.state.trim();
   }
@@ -71,9 +79,8 @@ const build = async (actor, input) => {
 };
 
 const prepare = async ({ actor, input }) => {
-  if (!input.clientName && !input.clientId) {
-    throw invalidInput('Which client should I update? Give a name or id.');
-  }
+  // No early guard here: resolveClientRef asks the question, and it asks it
+  // with the list of clients attached.
   const { client, updates } = await build(actor, input);
 
   return {

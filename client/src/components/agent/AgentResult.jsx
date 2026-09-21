@@ -232,6 +232,48 @@ function RecordAdded({ title, rows, note, reference, replayed }) {
   );
 }
 
+function SiteList({ data }) {
+  return (
+    <div className="agent-result">
+      <p className="eyebrow">
+        {data.includeInactive ? "All sites" : "Active sites"} &middot; {data.count}
+      </p>
+      {data.rows?.length === 0 && <p className="agent-empty">No sites set up yet.</p>}
+      {data.rows?.length > 0 && (
+        <div className="agent-table">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Site</TableHead>
+                <TableHead>Code</TableHead>
+                <TableHead>Where</TableHead>
+                <TableHead>Geofence</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell data-label="Site" data-field="title">{row.name}</TableCell>
+                  <TableCell data-label="Code">{row.shortName || "—"}</TableCell>
+                  <TableCell data-label="Where">{row.where || "—"}</TableCell>
+                  <TableCell data-label="Geofence">{row.geofence || "Not set"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+      {data.unfenced > 0 && (
+        <p className="agent-note">
+          {data.unfenced === 1 ? "1 site has" : `${data.unfenced} sites have`} no geofence, so
+          employees can clock in there from anywhere. Ask to set the location for a site to fix it.
+        </p>
+      )}
+      {data.truncated && <p className="agent-note">Showing the first {data.count}.</p>}
+    </div>
+  );
+}
+
 function EmployeeList({ data }) {
   return (
     <div className="agent-result">
@@ -358,6 +400,7 @@ export default function AgentResult({ envelope }) {
   if (tool === "findEmployeeShifts") return <EmployeeShifts data={data} />;
   if (tool === "getDailySummary") return <DailySummary data={data} />;
   if (tool === "listEmployees") return <EmployeeList data={data} />;
+  if (tool === "listSites") return <SiteList data={data} />;
   if (tool === "createShift") return <ShiftCreated data={data} replayed={replayed} />;
   if (tool === "cancelShift") return <ShiftCancelled data={data} replayed={replayed} />;
   if (tool === "createEmployee") return <EmployeeAdded data={data} replayed={replayed} />;
@@ -383,6 +426,75 @@ export default function AgentResult({ envelope }) {
         ]}
         note="Assign employees to this site before rostering anyone there."
         reference={data.siteId}
+        replayed={replayed}
+      />
+    );
+
+  if (tool === "updateEmployee")
+    return (
+      <RecordAdded
+        title="Employee updated"
+        rows={[
+          ["Employee", data.employee],
+          ["Changed", (data.changes || []).join(", ")],
+        ]}
+        reference={data.employeeId}
+        replayed={replayed}
+      />
+    );
+
+  if (tool === "deactivateEmployee")
+    return (
+      <div className="agent-result">
+        <div className="agent-success" style={{ color: "hsl(var(--color-warning))" }}>
+          <strong>Employee deactivated</strong>
+          {replayed && <Chip tone="muted">already done</Chip>}
+        </div>
+        <dl className="agent-facts">
+          <div><dt>Employee</dt><dd>{data.employee || data.employeeId}</dd></div>
+          {data.cancelledShifts > 0 && (
+            <div><dt>Shifts cancelled</dt><dd>{data.cancelledShifts}</dd></div>
+          )}
+        </dl>
+        <p className="agent-note">The record is kept for payroll and audit history.</p>
+        <p className="agent-provenance">Reference {data.employeeId}</p>
+      </div>
+    );
+
+  if (tool === "updateClient")
+    return (
+      <RecordAdded
+        title="Client updated"
+        rows={[
+          ["Client", data.client],
+          ["Changed", (data.changes || []).join(", ")],
+        ]}
+        reference={data.clientId}
+        replayed={replayed}
+      />
+    );
+
+  if (tool === "updateSite")
+    return (
+      <RecordAdded
+        title="Site updated"
+        rows={[
+          ["Site", data.site],
+          ["Changed", (data.changes || []).join(", ")],
+        ]}
+        reference={data.siteId}
+        replayed={replayed}
+      />
+    );
+
+  if (tool === "updateShift")
+    return (
+      <RecordAdded
+        title="Shift updated"
+        rows={[
+          ["Changed", (data.changes || []).filter((k) => k !== "shiftId").join(", ")],
+        ]}
+        reference={data.shiftId}
         replayed={replayed}
       />
     );

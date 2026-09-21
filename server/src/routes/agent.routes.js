@@ -31,6 +31,37 @@ const audioUpload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
+// Pieces of an email address as a speech recogniser hands them over.
+const EMAIL_LOCAL = '[a-z0-9][a-z0-9._+-]*';
+const EMAIL_DOMAIN = '[a-z0-9-]+(?:\\.[a-z0-9-]+)*';
+const EMAIL_TLD = '[a-z]{2,24}';
+const SPOKEN_EMAIL_RE = new RegExp(
+  `\\b(${EMAIL_LOCAL})\\s+at\\s+(${EMAIL_DOMAIN})\\s+dot\\s+(${EMAIL_TLD})\\b`,
+  'gi'
+);
+const WRITTEN_EMAIL_RE = new RegExp(
+  `\\b(${EMAIL_LOCAL})\\s+at\\s+(${EMAIL_DOMAIN}\\.${EMAIL_TLD})\\b`,
+  'gi'
+);
+
+// Groq's speech endpoint takes a bounded string. The old cap of 200 sliced
+// mid-word, so a two-sentence answer stopped in the middle of the first one.
+// Cut at a sentence end where there is one, and never inside a word.
+const MAX_TTS_CHARS = 600;
+
+const forSpeech = (value) => {
+  const text = String(value).trim();
+  if (text.length <= MAX_TTS_CHARS) return text;
+  const head = text.slice(0, MAX_TTS_CHARS);
+  const sentenceEnd = Math.max(
+    head.lastIndexOf('. '),
+    head.lastIndexOf('! '),
+    head.lastIndexOf('? ')
+  );
+  if (sentenceEnd > MAX_TTS_CHARS * 0.5) return head.slice(0, sentenceEnd + 1);
+  return `${head.replace(/\s+\S*$/, '')}…`;
+};
+
 const STATUS_BY_CODE = {
   [CODES.INVALID_INPUT]: 400,
   [CODES.FORBIDDEN]: 403,
@@ -42,6 +73,18 @@ const STATUS_BY_CODE = {
   [CODES.TIMEOUT]: 504,
   [CODES.PLANNER_UNAVAILABLE]: 503,
   [CODES.INTERNAL]: 500,
+};
+
+/**
+ * Which field a tool refusal is waiting on.
+ *
+ * Tools name the outstanding field in `details.missing`. Passing it back with
+ * the conversation context is what lets the next message be read as the answer
+ * to this question rather than handed to the planner to place.
+ */
+const awaitingField = (error) => {
+  const missing = error?.details?.missing;
+  return Array.isArray(missing) && typeof missing[0] === 'string' ? missing[0] : null;
 };
 
 const withActor = (handler) =>
@@ -192,16 +235,16 @@ router.post(
  *   { kind:'write',   tool, draftId, ... }   — write preview awaiting confirm
  *
  * @route POST /api/agent/chat
- * @body  { message: String, history?: [{ role, content }] }
+ * @body  { message: String, history?: [{ role, content }], context?: { tool, input } }
  */
 router.post(
   '/chat',
   withActor(async (req, res, actor) => {
-    const { message, history } = req.body || {};
+    const { message, history, context } = req.body || {};
 
     let proposal;
     try {
-      proposal = await plan({ actor, message, history });
+      proposal = await plan({ actor, message, history, context });
     } catch (error) {
       if (error instanceof AgentError) {
         return res.status(STATUS_BY_CODE[error.code] || 500).json({
@@ -214,19 +257,22 @@ router.post(
 
     // Text reply — model needs more info from the admin
     if (proposal.kind === 'reply') {
-      return res.json({ ok: true, data: { kind: 'reply', message: proposal.message, usage: proposal.usage, pipeline: proposal.pipeline } });
+      return res.json({ ok: true, data: { kind: 'reply', message: proposal.message, context: proposal.context || null, usage: proposal.usage, pipeline: proposal.pipeline } });
     }
 
     if (proposal.kind === 'tool_call') {
       const { tool: toolName, input, toolKind, message: planMessage, usage, pipeline } = proposal;
+      // Echo the attempted command even when validation asks for another field.
+      // This is untrusted conversational state; all retries still pass the gateway.
+      const nextContext = { tool: toolName, input: input || {} };
 
       if (toolKind === 'read') {
         const result = await execute({ actor, toolName, input: input || {} });
         const status = result.ok ? 200 : (STATUS_BY_CODE[result.error?.code] || 500);
         return res.status(status).json(
           result.ok
-            ? { ok: true, data: { kind: 'read', tool: toolName, message: planMessage, data: result.data, summary: result.summary, usage, pipeline } }
-            : { ok: false, error: result.error }
+            ? { ok: true, data: { kind: 'read', tool: toolName, context: nextContext, correlationId: result.correlationId, message: planMessage, data: result.data, summary: result.summary, usage, pipeline } }
+            : { ok: false, error: result.error, context: { ...nextContext, awaiting: awaitingField(result.error) } }
         );
       }
 
@@ -235,8 +281,8 @@ router.post(
         const status = result.ok ? 200 : (STATUS_BY_CODE[result.error?.code] || 500);
         return res.status(status).json(
           result.ok
-            ? { ok: true, data: { kind: 'write', tool: toolName, message: planMessage, draftId: result.draftId, integrityHash: result.integrityHash, expiresAt: result.expiresAt, preview: result.preview, usage, pipeline } }
-            : { ok: false, error: result.error }
+            ? { ok: true, data: { kind: 'write', tool: toolName, context: nextContext, correlationId: result.correlationId, message: planMessage, draftId: result.draftId, integrityHash: result.integrityHash, expiresAt: result.expiresAt, preview: result.preview, usage, pipeline } }
+            : { ok: false, error: result.error, context: { ...nextContext, awaiting: awaitingField(result.error) } }
         );
       }
     }
@@ -250,15 +296,15 @@ router.post(
  * New clients should use /chat instead.
  *
  * @route POST /api/agent/plan
- * @body  { message: String, history?: [{ role, content }] }
+ * @body  { message: String, history?: [{ role, content }], context?: { tool, input } }
  */
 router.post(
   '/plan',
   withActor(async (req, res, actor) => {
-    const { message, history } = req.body || {};
+    const { message, history, context } = req.body || {};
 
     try {
-      const proposal = await plan({ actor, message, history });
+      const proposal = await plan({ actor, message, history, context });
       res.json({ ok: true, data: proposal });
     } catch (error) {
       if (error instanceof AgentError) {
@@ -326,10 +372,16 @@ router.post(
 
     pipeline.stt_end = Date.now();
 
-    // Normalise spoken email: "archi at tapvera dot io" → "archi@tapvera.io"
+    // Normalise spoken email: "archi at tapvera dot io" → "archi@tapvera.io".
+    //
+    // Both sides have to look like an address. Matching any token around "at"
+    // rewrote ordinary speech: "assign Sam at 10.30 to 6.30" came through as
+    // "assign Sam@10.30 to 6.30", and the command was gone before the planner
+    // ever saw it. A domain now needs a letters-only suffix, which decimal
+    // times, room numbers and initials do not have.
     const text = raw
-      .replace(/\b(\S+)\s+at\s+(\S+)\s+dot\s+(\S+)\b/gi, '$1@$2.$3')
-      .replace(/\b(\S+)\s+at\s+(\S+\.\S+)\b/gi, '$1@$2')
+      .replace(SPOKEN_EMAIL_RE, '$1@$2.$3')
+      .replace(WRITTEN_EMAIL_RE, '$1@$2')
       .trim();
 
     pipeline.normalizer_end = Date.now();
@@ -366,7 +418,7 @@ router.post(
     try {
       const { data, headers } = await axios.post(
         `${baseUrl}/audio/speech`,
-        { model: ttsModel, input: text.trim().slice(0, 4096), voice: 'tara' },
+        { model: ttsModel, input: forSpeech(text), voice: 'diana', response_format: 'wav' },
         {
           headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           responseType: 'arraybuffer',

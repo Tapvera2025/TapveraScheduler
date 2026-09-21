@@ -33,6 +33,22 @@ class AgentError extends Error {
 }
 
 const invalidInput = (message, details) => new AgentError(CODES.INVALID_INPUT, message, details);
+
+/**
+ * A required reference was not given, and the options are known.
+ *
+ * Carries the same code as invalidInput, so the client keeps treating it as a
+ * question to answer rather than a failure to report, with the choices attached
+ * so it can offer them instead of leaving the admin to go and look a name up.
+ */
+const needsChoice = (message, { entity, candidates, truncated = false }) =>
+  new AgentError(CODES.INVALID_INPUT, message, {
+    entity,
+    choose: true,
+    candidates,
+    truncated,
+    missing: [`${entity}Name`],
+  });
 const notFound = (message, details) => new AgentError(CODES.NOT_FOUND, message, details);
 const ambiguous = (message, details) => new AgentError(CODES.AMBIGUOUS_ENTITY, message, details);
 const forbidden = (message, details) => new AgentError(CODES.FORBIDDEN, message, details);
@@ -45,6 +61,7 @@ module.exports = {
   CODES,
   AgentError,
   invalidInput,
+  needsChoice,
   notFound,
   ambiguous,
   forbidden,

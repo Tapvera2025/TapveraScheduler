@@ -31,6 +31,11 @@ const CREATE_SHIFT_VERB_RE = /\b(schedule|book|assign|roster|add\s+shift|create\
 
 const CANCEL_SHIFT_VERB_RE = /\b(cancel|remove|delete)\s+(?:(?:the|a|this|that)\s+)?shift\b/i;
 
+// A question about who is working, rather than who is employed. It has to beat
+// the listEmployees pattern, because "all staff working today" matches both and
+// the full staff list is not an answer to it.
+const ROSTERED_RE = /\b(working|works|rostered|on\s+shift|on\s+duty|on\s+today|clocked\s+in)\b/i;
+
 const extract = (text) => {
   const empMatch   = text.match(EMP_ID_RE);
   const siteMatch  = text.match(SITE_ID_RE);
@@ -117,7 +122,10 @@ const routeRead = (text) => {
   if (ex.employeeId && /shifts?|roster|rota/i.test(lower)) {
     const input = { employeeId: ex.employeeId };
     if (ex.from) { input.from = ex.from; if (ex.to) input.to = ex.to; }
-    else if (ex.date) input.from = ex.date;
+    // One date means that one day. Sending only `from` makes the tool apply its
+    // own default end, which is thirteen days later — a fortnight in answer to
+    // a question about tomorrow.
+    else if (ex.date) { input.from = ex.date; input.to = ex.date; }
     return { tool: 'findEmployeeShifts', input };
   }
 
@@ -130,12 +138,35 @@ const routeRead = (text) => {
     return { tool: 'getDailySummary', input };
   }
 
+  // getDailySummary — "which staff are working today", "who is on shift
+  // tomorrow". A rostered question with one resolved date is a daily summary
+  // whatever noun it uses for the people.
+  if (ROSTERED_RE.test(lower) && ex.date && !ex.from) {
+    const input = { date: ex.date };
+    if (ex.siteId) input.siteId = ex.siteId;
+    return { tool: 'getDailySummary', input };
+  }
+
   // listEmployees — "list employees", "show all staff", "how many employees"
   if (/\b(list|show|get|view|all|how many).{0,20}(employees?|staff|workers?|team)\b/i.test(lower)
-      && !ex.employeeId) {
+      && !ex.employeeId
+      && !ROSTERED_RE.test(lower)) {
     const input = {};
     if (ex.siteId) input.siteId = ex.siteId;
     return { tool: 'listEmployees', input };
+  }
+
+  // listSites — "what sites are available", "list all sites", "how many sites".
+  //
+  // Deliberately narrow: the site has to be the subject of the question, not
+  // something mentioned in it. "show shifts at site 2" is a question about
+  // shifts and must not land here.
+  if (/^(?:what|which)\s+sites?\b/i.test(lower)
+      || /\bsites?\s+(?:are\s+)?(?:available|there|set\s+up)\b/i.test(lower)
+      || /\b(?:list|show|view|get)\s+(?:me\s+)?(?:the\s+|all\s+|our\s+)*sites?\b/i.test(lower)
+      || /\bhow\s+many\s+sites?\b/i.test(lower)
+      || /\bsite\s+list\b/i.test(lower)) {
+    return { tool: 'listSites', input: {} };
   }
 
   // getAttendanceReport — "attendance for archi", "clock-in report for archi"
@@ -192,12 +223,54 @@ const routeWrite = (text) => {
 };
 
 /**
+ * Words an utterance may contain and still name nobody and nowhere.
+ *
+ * Matching the intent pattern is not enough to call an utterance entity-free:
+ * "list employees at Tapvera HQ" matches it and names a site. Skipping entity
+ * resolution there drops the site filter silently and answers for the whole
+ * organisation, which looks like a correct fast answer. So every word has to be
+ * one we recognise; one unknown word means there may be a name in it, and the
+ * resolver runs.
+ *
+ * Prepositions are safe to allow. It is the name after them that is unknown, so
+ * "staff at Tapvera HQ" still falls through on "tapvera" — allowing "at" only
+ * keeps the speed on the phrasings that name nothing.
+ */
+const ENTITY_FREE_WORDS = new Set([
+  // question and command words
+  'who', 'whos', 'is', 'are', 'was', 'were', 'am', 'be', 'been', 'do', 'does',
+  'did', 'can', 'have', 'has', 'had', 'show', 'list', 'get', 'give', 'view',
+  'tell', 'find', 'see', 'how', 'many', 'much', 'what', 'whats', 'when',
+  'whens', 'which', 'please', 'me', 'us', 'i', 'we', 'you',
+  // articles, filler and connectives
+  'a', 'an', 'the', 'all', 'any', 'our', 'my', 'of', 'and', 'or', 'in', 'on',
+  'to', 'at', 'for', 'from', 'by', 'with', 'about', 'it', 'that', 'this',
+  'those', 'these', 'there', 'right', 'now', 'currently', 'just', 'today',
+  'todays',
+  // the nouns these patterns are about
+  'employee', 'employees', 'staff', 'worker', 'workers', 'team', 'people',
+  'person', 'roster', 'rostered', 'rota', 'shift', 'shifts', 'daily',
+  'summary', 'schedule', 'work', 'works', 'working', 'duty', 'clocked',
+  // dates and periods, which the normalizer resolves without the database
+  'tomorrow', 'yesterday', 'tonight', 'this', 'next', 'last', 'week',
+  'weekend', 'month', 'morning', 'afternoon', 'evening', 'night',
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+]);
+
+const isEntityFree = (text) => {
+  const words = String(text).toLowerCase().match(/[a-z']+/g) || [];
+  if (!words.length) return false;
+  return words.every((w) => ENTITY_FREE_WORDS.has(w.replace(/'s$/, '').replace(/'/g, '')));
+};
+
+/**
  * Patterns that need no entity annotations (no employeeId, no siteId).
  * Called on raw text before preResolve so we can skip the DB call entirely.
  * Returns { tool, input } or null.
  */
 const routeEntityFree = (text) => {
   if (WRITE_RE.test(text)) return null;
+  if (!isEntityFree(text)) return null;
   const lower = text.toLowerCase();
 
   // getDailySummary — entity-free: any daily roster query without a named person
@@ -206,7 +279,8 @@ const routeEntityFree = (text) => {
   }
 
   // listEmployees — entity-free: any list/show employees query
-  if (/\b(list|show|get|view|all|how many).{0,20}(employees?|staff|workers?|team)\b|\bemployee\s+list\b/i.test(lower)) {
+  if (/\b(list|show|get|view|all|how many).{0,20}(employees?|staff|workers?|team)\b|\bemployee\s+list\b/i.test(lower)
+      && !ROSTERED_RE.test(lower)) {
     return { tool: 'listEmployees', input: {} };
   }
 
@@ -215,4 +289,4 @@ const routeEntityFree = (text) => {
 
 const route = (text) => routeWrite(text) || routeRead(text);
 
-module.exports = { route, routeRead, routeWrite, routeEntityFree, parseTimeRange };
+module.exports = { route, routeRead, routeWrite, routeEntityFree, isEntityFree, parseTimeRange };

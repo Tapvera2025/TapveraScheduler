@@ -46,7 +46,7 @@ const created = (d) =>
   `Created. ${d.employee?.name} is on at ${d.site?.name}, ${d.start} to ${d.end}.`;
 
 const employeeAdded = (d) =>
-  `${d.employee?.name} has been added as ${d.position}. They have no login yet, and no shifts until you assign them to a site.`;
+  `${d.employee?.name} has been added as ${d.position}. Their sign-in details have been emailed to ${d.email}. They have no shifts until you assign them to a site.`;
 
 const dailySummary = (d) => {
   if (!d.totalShifts) return `No shifts are rostered${d.site ? ` at ${d.site}` : ""} for ${d.date}.`;
@@ -76,6 +76,7 @@ export const speakableResult = (envelope) => {
   if (tool === "findEmployeeShifts") return shifts(data);
   if (tool === "getDailySummary") return dailySummary(data);
   if (tool === "listEmployees") return employeeList(data);
+  if (tool === "listSites") return siteList(data);
   if (tool === "createShift") return replayed ? "That shift was already created." : created(data);
   if (tool === "cancelShift") return shiftCancelled(data);
   if (tool === "createEmployee") return replayed ? "That person was already added." : employeeAdded(data);
@@ -85,6 +86,19 @@ export const speakableResult = (envelope) => {
     return replayed
       ? "That site was already added."
       : `${data.site?.name} added under ${data.client}. Assign employees to it before rostering.`;
+  if (tool === "updateEmployee")
+    return `${data.employee} updated. ${(data.changes || []).join(", ")} changed.`;
+  if (tool === "deactivateEmployee") {
+    const n = data.cancelledShifts;
+    const who = data.employee ? `${data.employee} deactivated.` : "Done.";
+    return `${who} ${n > 0 ? `${plural(n, "upcoming shift", "upcoming shifts")} cancelled.` : "No upcoming shifts were affected."}`;
+  }
+  if (tool === "updateClient")
+    return `${data.client} updated.`;
+  if (tool === "updateSite")
+    return `${data.site} updated.`;
+  if (tool === "updateShift")
+    return "The shift has been updated. Details are on screen.";
   return "Done. The details are on screen.";
 };
 
@@ -101,7 +115,13 @@ export const speakablePreview = (preview) => {
   }
 
   if (preview.action === "Add site") {
-    return `Add ${preview.site}, short code ${preview.shortName}, under ${preview.client}, timezone ${preview.timezone}. Say confirm, or cancel.`;
+    const head = `Add ${preview.site}, short code ${preview.shortName}, under ${preview.client}, timezone ${preview.timezone}.`;
+    if (preview.location?.latitude != null) {
+      return `${head} Geofence ${preview.geofence}. Say confirm, or cancel.`;
+    }
+    // A location cannot be dictated, so the choice is spelled out: set it on
+    // screen, or knowingly add a site that anyone can clock in to from anywhere.
+    return `${head} There is no geofence yet, so employees could clock in from anywhere. Set the location on screen, or say confirm to add it without one.`;
   }
 
   if (preview.action === "Cancel shift") {
@@ -109,8 +129,60 @@ export const speakablePreview = (preview) => {
     return `Cancel ${who}${preview.site ? ` at ${preview.site}` : ""}${preview.start ? `, starting ${preview.start}` : ""}. Say confirm to cancel it, or say cancel to keep it.`;
   }
 
+  if (preview.action === "Update employee") {
+    const what = (preview.changes || []).join(", ");
+    return `Update ${preview.employee}: ${what}. Say confirm or cancel.`;
+  }
+
+  if (preview.action === "Deactivate employee") {
+    const n = preview.futureShiftsAffected;
+    const shifts = n > 0 ? ` ${plural(n, "upcoming shift", "upcoming shifts")} will be cancelled.` : "";
+    return `Deactivate ${preview.employee}.${shifts} Say confirm or cancel.`;
+  }
+
+  if (preview.action === "Update client") {
+    const what = (preview.changes || []).join(", ");
+    return `Update ${preview.client}: ${what}. Say confirm or cancel.`;
+  }
+
+  if (preview.action === "Update site") {
+    const what = (preview.changes || []).join(", ");
+    return `Update ${preview.site}: ${what}. Say confirm or cancel.`;
+  }
+
+  if (preview.action === "Update shift") {
+    const what = (preview.changes || []).join(", ");
+    return `Update ${preview.employee}'s shift at ${preview.site}: ${what}. Say confirm or cancel.`;
+  }
+
   const overnight = preview.crossesMidnight ? ", finishing the following morning" : "";
   return `${preview.employee} at ${preview.site}, ${preview.start} to ${preview.end}${overnight}. That is ${preview.hours} hours. Say confirm to create it, or cancel.`;
+};
+
+const siteList = (d) => {
+  if (!d.count) return "There are no sites set up yet.";
+  const names = d.rows.slice(0, 5).map((r) => r.name);
+  const rest = d.count - names.length;
+  const tail = rest > 0 ? `, and ${rest} more` : "";
+  let fence = "";
+  if (d.unfenced === d.count) fence = " None of them have a geofence.";
+  else if (d.unfenced === 1) fence = " 1 has no geofence.";
+  else if (d.unfenced > 1) fence = ` ${d.unfenced} have no geofence.`;
+  return `${plural(d.count, "site", "sites")}: ${join(names)}${tail}.${fence} The list is on screen.`;
+};
+
+/**
+ * A question that came with its own answers. Spoken aloud the list has to be
+ * short — nobody holds fifteen site names in their head — so past a few it
+ * says how many there are and leaves the screen to show them.
+ */
+export const speakableChoice = (message, choice) => {
+  const names = (choice?.candidates || []).map((c) => c.name);
+  if (!names.length) return message;
+  if (names.length > 4) {
+    return `${message} There are ${names.length} to choose from, on screen.`;
+  }
+  return `${message} ${join(names)}.`;
 };
 
 /** What to say when something could not be done. */

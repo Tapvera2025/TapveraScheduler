@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { agentApi } from "../../lib/api";
+import { CONFIRM_RE, DENY_RE } from "./confirmation";
 
 /**
  * Client half of the agent state machine.
@@ -28,10 +29,10 @@ const readError = (err) =>
   };
 
 // One-word confirmation shortcut. When a draft is on-screen and the user
-// replies with any of these, we skip the LLM round-trip entirely and hit
-// /commit (or /cancel) directly. Trailing punctuation is tolerated.
-const CONFIRM_RE = /^(y|ye|yes|yeah|yep|yup|ok|okay|k|sure|confirm|do\s+it|go\s+ahead|please\s+do|proceed)[.!?]?$/i;
-const DENY_RE    = /^(n|no|nope|nah|cancel|stop|abort|don't|dont|never\s*mind|scratch\s+that|discard)[.!?]?$/i;
+// replies with a bare yes or no, we skip the LLM round-trip entirely and hit
+// /commit (or /cancel) directly. The words themselves live in confirmation.js
+// so the voice assistant answers to exactly the same ones.
+const MAX_HISTORY = 24;
 
 export default function useAgent() {
   const queryClient = useQueryClient();
@@ -43,15 +44,64 @@ export default function useAgent() {
 
   const [phase, setPhase] = useState(PHASES.IDLE);
   const [planning, setPlanning] = useState(false);
-  const [history, setHistory] = useState([]);
+  // Refs keep follow-up turns current even when a cancellation and a new
+  // request happen before React has rendered again (for example in voice).
+  const historyRef = useRef([]);
+  const contextRef = useRef(null);
+  const draftRef = useRef(null);
+  const failedRequestRef = useRef(null);
+  const requestRef = useRef(0);
+  const busyRef = useRef(false);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [assistantMessage, setAssistantMessage] = useState("");
+  // Bumped once for every finished turn. Voice keys its "say this once" guard
+  // on it: two identical answers in a row are two answers, and without a
+  // counter the second one is mistaken for a re-render and never spoken.
+  const [outcomeId, setOutcomeId] = useState(0);
+  // A question that arrived with its own answers — "which site?" plus the list
+  // of sites. Held apart from `error` because a field the tool still needs is a
+  // question, not a failure, and must not render as one; the choices have to
+  // outlive that distinction so the click still works.
+  const [choice, setChoice] = useState(null);
+  const choiceRef = useRef(null);
+
+  const noteOutcome = useCallback(() => setOutcomeId((n) => n + 1), []);
+
+  const offerChoice = useCallback((details) => {
+    const next =
+      details?.entity && details?.candidates?.length
+        ? {
+            entity: details.entity,
+            candidates: details.candidates,
+            truncated: Boolean(details.truncated),
+          }
+        : null;
+    choiceRef.current = next;
+    setChoice(next);
+  }, []);
 
   const appendMessage = useCallback((msg) => {
     setMessages((prev) => [...prev, { id: Date.now() + Math.random(), ...msg }]);
+  }, []);
+
+  const remember = useCallback((...turns) => {
+    historyRef.current = [...historyRef.current, ...turns].slice(-MAX_HISTORY);
+  }, []);
+
+  const updateContext = useCallback((context) => {
+    contextRef.current = context || null;
+    if (context?.tool) {
+      setToolName(context.tool);
+      setValues(context.input || {});
+    }
+  }, []);
+
+  const updateDraft = useCallback((next) => {
+    draftRef.current = next;
+    setDraft(next);
   }, []);
 
   useEffect(() => {
@@ -80,7 +130,9 @@ export default function useAgent() {
       name,
       description: schema.description || "",
       required: required.includes(name),
-      hidden: name.endsWith("Id"),
+      // Ids come from choices and coordinates from the map picker; neither is
+      // something to type into a box.
+      hidden: name.endsWith("Id") || name === "latitude" || name === "longitude",
     }));
   }, [tool]);
 
@@ -89,64 +141,99 @@ export default function useAgent() {
   }, []);
 
   const selectTool = useCallback((name) => {
+    requestRef.current += 1;
+    busyRef.current = false;
+    contextRef.current = null;
+    failedRequestRef.current = null;
+    choiceRef.current = null;
+    setChoice(null);
     setToolName(name);
     setValues({});
-    setDraft(null);
+    updateDraft(null);
     setResult(null);
     setError(null);
+    setPlanning(false);
     setPhase(PHASES.IDLE);
-  }, []);
+  }, [updateDraft]);
 
   const reset = useCallback(() => {
-    setDraft(null);
+    requestRef.current += 1;
+    busyRef.current = false;
+    contextRef.current = null;
+    failedRequestRef.current = null;
+    choiceRef.current = null;
+    setChoice(null);
+    updateDraft(null);
     setResult(null);
     setError(null);
     setAssistantMessage("");
+    setPlanning(false);
     setPhase(PHASES.IDLE);
-  }, []);
+  }, [updateDraft]);
 
   const clearHistory = useCallback(() => {
     setMessages([]);
-    setHistory([]);
-    setDraft(null);
-    setResult(null);
-    setError(null);
-    setAssistantMessage("");
-    setPhase(PHASES.IDLE);
-  }, []);
+    historyRef.current = [];
+    reset();
+  }, [reset]);
 
   const runTool = useCallback(
     async (name, payload, kind, userText) => {
       const target = kind || tools.find((t) => t.function?.name === name)?.kind;
-      if (!name || !target) return;
+      if (!name || !target || busyRef.current) return;
+
+      busyRef.current = true;
+      const requestId = ++requestRef.current;
+      updateContext({ tool: name, input: payload });
+      if (userText) {
+        appendMessage({ type: "user", content: userText });
+        remember({ role: "user", content: userText });
+      }
 
       setError(null);
       setResult(null);
-      setDraft(null);
+      updateDraft(null);
+      setAssistantMessage("");
+      offerChoice(null);
+      setMessages((prev) => prev.filter((m) => m.type !== "preview"));
       setPhase(PHASES.RUNNING);
 
       try {
         if (target === "write") {
           const res = await agentApi.prepare(name, payload);
+          if (requestId !== requestRef.current) return;
           const draftData = res.data;
-          setDraft(draftData);
+          updateDraft(draftData);
           setPhase(PHASES.AWAITING_CONFIRMATION);
+          noteOutcome();
           appendMessage({ type: "preview", tool: name, draft: draftData });
+          remember({ role: "assistant", content: `Prepared ${name}; awaiting confirmation. Nothing has been saved yet.` });
         } else {
           const res = await agentApi.execute(name, payload);
+          if (requestId !== requestRef.current) return;
           const envelope = res.data;
+          updateContext(null);
           setResult(envelope);
           setPhase(PHASES.DONE);
+          noteOutcome();
           appendMessage({ type: "result", tool: name, envelope });
+          remember({ role: "assistant", content: `Completed ${name}; the result was displayed.` });
         }
+        failedRequestRef.current = null;
       } catch (err) {
+        if (requestId !== requestRef.current) return;
         const e = readError(err);
+        remember({ role: "assistant", content: e.message });
         setError(e);
         setPhase(PHASES.IDLE);
+        offerChoice(e.details);
+        noteOutcome();
         appendMessage({ type: "error", message: e.message, details: e.details });
+      } finally {
+        if (requestId === requestRef.current) busyRef.current = false;
       }
     },
-    [tools, appendMessage]
+    [tools, appendMessage, remember, noteOutcome, offerChoice, updateContext, updateDraft]
   );
 
   const run = useCallback(
@@ -155,70 +242,134 @@ export default function useAgent() {
   );
 
   const confirm = useCallback(async () => {
-    if (!draft?.draftId || !draft?.integrityHash) return;
+    const pending = draftRef.current;
+    if (!pending?.draftId || !pending?.integrityHash || busyRef.current) return;
+    busyRef.current = true;
+    const requestId = ++requestRef.current;
     setError(null);
     setPhase(PHASES.COMMITTING);
 
-    // Replace the preview message with a confirmed result
-    setMessages((prev) => prev.filter((m) => m.type !== "preview"));
-
     try {
-      const res = await agentApi.commit(draft.draftId, draft.integrityHash);
+      const res = await agentApi.commit(pending.draftId, pending.integrityHash);
+      if (requestId !== requestRef.current) return;
       const envelope = res.data;
+      const completedTool = envelope.tool || contextRef.current?.tool || toolName;
       setResult(envelope);
-      setDraft(null);
+      updateDraft(null);
+      updateContext(null);
+      failedRequestRef.current = null;
       setPhase(PHASES.DONE);
-      appendMessage({ type: "result", tool: envelope.tool || toolName, envelope });
+      noteOutcome();
+      setMessages((prev) => prev.filter((m) => m.type !== "preview"));
+      appendMessage({ type: "result", tool: completedTool, envelope });
+      remember({ role: "assistant", content: `Confirmed and completed ${completedTool}. The change was saved.` });
       await queryClient.invalidateQueries();
     } catch (err) {
+      if (requestId !== requestRef.current) return;
       const e = readError(err);
+      remember({ role: "assistant", content: `Confirmation failed: ${e.message}` });
       setError(e);
       setPhase(PHASES.AWAITING_CONFIRMATION);
+      noteOutcome();
       appendMessage({ type: "error", message: e.message, details: e.details });
+    } finally {
+      if (requestId === requestRef.current) busyRef.current = false;
     }
-  }, [draft, toolName, queryClient, appendMessage]);
+  }, [toolName, queryClient, appendMessage, remember, noteOutcome, updateContext, updateDraft]);
 
   const cancel = useCallback(async () => {
-    if (!draft?.draftId) return reset();
+    if (busyRef.current) return;
+    const pending = draftRef.current;
+    const cancelledTool = contextRef.current?.tool || toolName;
+    if (!pending?.draftId) return reset();
+    busyRef.current = true;
+    const requestId = ++requestRef.current;
+    setPhase(PHASES.RUNNING);
     try {
-      await agentApi.cancel(draft.draftId);
-    } catch {
-      // Draft already settled or expired
+      try {
+        await agentApi.cancel(pending.draftId);
+      } catch {
+        // Draft already settled or expired
+      }
+      if (requestId !== requestRef.current) return;
+      setMessages((prev) => prev.filter((m) => m.type !== "preview"));
+      remember({ role: "assistant", content: `Cancelled ${cancelledTool}; no change was saved.` });
+      reset();
+      // reset() clears this, so it has to be set after. Cancelling needs to
+      // leave something behind: with nothing to announce, voice has nothing to
+      // say and never reopens the microphone.
+      setAssistantMessage("Cancelled. Nothing was saved.");
+      noteOutcome();
+    } finally {
+      // Every other phase clears the flag in a finally. This one returns early
+      // when it is overtaken, and relies on whoever overtook it to have done
+      // so. Clearing it here too costs nothing and means a raised flag can
+      // never outlive the call that raised it — a stuck flag drops every later
+      // command without a word.
+      if (requestId === requestRef.current) busyRef.current = false;
     }
-    setMessages((prev) => prev.filter((m) => m.type !== "preview"));
-    reset();
-  }, [draft, reset]);
+  }, [toolName, reset, remember, noteOutcome]);
 
+  /**
+   * One turn in. Returns false only when a turn was refused because the last
+   * one is still running, so a caller that cannot see the screen — the voice
+   * assistant — can say so instead of leaving the person talking to a closed
+   * microphone. Nothing to say is not a refusal.
+   */
   const ask = useCallback(
     async (text) => {
       const message = String(text || "").trim();
       if (!message) return;
+      if (busyRef.current) return false;
 
       // One-word confirmation shortcut. If a draft is currently on-screen and
       // the user replies "yes"/"no"/etc., act on the draft directly rather
       // than paying for a planner turn to interpret it. Preserves the pending
       // action state without any round-trip through the LLM or preResolver.
-      if (draft?.draftId && phase === PHASES.AWAITING_CONFIRMATION) {
+      if (draftRef.current?.draftId) {
         if (CONFIRM_RE.test(message)) {
           appendMessage({ type: "user", content: message });
+          remember({ role: "user", content: message });
           await confirm();
-          return;
+          return true;
         }
         if (DENY_RE.test(message)) {
           appendMessage({ type: "user", content: message });
+          remember({ role: "user", content: message });
           await cancel();
-          return;
+          return true;
         }
       }
 
+      busyRef.current = true;
+      const requestId = ++requestRef.current;
+      const previousDraft = draftRef.current;
+      updateDraft(null);
+      failedRequestRef.current = null;
       appendMessage({ type: "user", content: message });
       setPlanning(true);
       setError(null);
+      setResult(null);
+      setAssistantMessage("");
+      offerChoice(null);
+      setPhase(PHASES.RUNNING);
+      setMessages((prev) => prev.filter((m) => m.type !== "preview"));
 
       try {
-        const res = await agentApi.chat(message, history);
+        if (previousDraft?.draftId) {
+          try {
+            await agentApi.cancel(previousDraft.draftId);
+          } catch {
+            // Expired drafts are also no longer confirmable in this thread.
+          }
+          if (requestId !== requestRef.current) return;
+          remember({ role: "assistant", content: "Discarded the previous preview before this new request; no change was saved." });
+        }
+        const res = await agentApi.chat(message, historyRef.current, contextRef.current);
+        if (requestId !== requestRef.current) return;
         const data = res.data?.data || {};
         const { kind, message: assistantMsg, pipeline } = data;
+        if (data.context !== undefined) updateContext(data.context);
 
         if (assistantMsg) {
           setAssistantMessage(assistantMsg);
@@ -227,19 +378,30 @@ export default function useAgent() {
           setAssistantMessage("");
         }
 
-        setHistory((prev) =>
-          [
-            ...prev,
-            { role: "user", content: message },
-            ...(assistantMsg ? [{ role: "assistant", content: assistantMsg }] : []),
-          ].slice(-6)
+        const outcome = kind === "read"
+          ? `Completed ${data.tool}; the result was displayed.`
+          : kind === "write"
+            ? `Prepared ${data.tool}; awaiting confirmation. Nothing has been saved yet.`
+            : "";
+        remember(
+          { role: "user", content: message },
+          { role: "assistant", content: [assistantMsg, outcome].filter(Boolean).join(" ") }
         );
+
+        noteOutcome();
 
         if (kind === "reply") {
           setPhase(PHASES.IDLE);
         } else if (kind === "read") {
-          const envelope = { ok: true, tool: data.tool, data: data.data, summary: data.summary };
+          const envelope = {
+            ok: true,
+            tool: data.tool,
+            correlationId: data.correlationId,
+            data: data.data,
+            summary: data.summary,
+          };
           setToolName(data.tool);
+          updateContext(null);
           setResult(envelope);
           setPhase(PHASES.DONE);
           appendMessage({ type: "result", tool: data.tool, envelope, pipeline });
@@ -252,26 +414,28 @@ export default function useAgent() {
             preview: data.preview,
           };
           setToolName(data.tool);
-          setDraft(draftData);
+          updateDraft(draftData);
           setPhase(PHASES.AWAITING_CONFIRMATION);
           appendMessage({ type: "preview", tool: data.tool, draft: draftData, pipeline });
         }
       } catch (err) {
+        if (requestId !== requestRef.current) return;
         const e = readError(err);
+        const failedContext = err?.response?.data?.context;
+        if (failedContext !== undefined) updateContext(failedContext);
+        failedRequestRef.current = message;
+        remember(
+          { role: "user", content: message },
+          { role: "assistant", content: e.message }
+        );
         // INVALID_INPUT and NOT_FOUND always require the user to say something next —
         // show them as conversational assistant bubbles, not red errors.
         // AMBIGUOUS_ENTITY and CONFLICT keep the error path because they render
         // interactive candidate / conflict lists in the UI.
+        offerChoice(e.details);
         if (['INVALID_INPUT', 'NOT_FOUND'].includes(e.code)) {
           setAssistantMessage(e.message);
-          appendMessage({ type: "assistant", content: e.message });
-          setHistory((prev) =>
-            [
-              ...prev,
-              { role: "user", content: message },
-              { role: "assistant", content: e.message },
-            ].slice(-6)
-          );
+          appendMessage({ type: "assistant", content: e.message, details: e.details });
           setError(null);
           setPhase(PHASES.IDLE);
         } else {
@@ -279,22 +443,62 @@ export default function useAgent() {
           setPhase(PHASES.IDLE);
           appendMessage({ type: "error", message: e.message, details: e.details });
         }
+        noteOutcome();
       } finally {
-        setPlanning(false);
+        if (requestId === requestRef.current) {
+          busyRef.current = false;
+          setPlanning(false);
+        }
       }
+      return true;
     },
-    [history, appendMessage, draft, phase, confirm, cancel]
+    [appendMessage, confirm, cancel, remember, noteOutcome, offerChoice, updateContext, updateDraft]
+  );
+
+  /**
+   * Re-prepare the change in progress with extra fields supplied by the app
+   * rather than typed — the map picker's location, for one. The old draft is
+   * cancelled, the tool runs again with everything collected so far plus the
+   * new fields, and a fresh preview replaces the old one. Nothing is saved
+   * until that new preview is confirmed.
+   */
+  const revise = useCallback(
+    async (fields, label) => {
+      const context = contextRef.current;
+      if (!context?.tool || busyRef.current) return;
+
+      const previous = draftRef.current;
+      if (previous?.draftId) {
+        try {
+          await agentApi.cancel(previous.draftId);
+        } catch {
+          // Already settled or expired; the new draft supersedes it either way.
+        }
+      }
+      return runTool(context.tool, { ...context.input, ...fields }, undefined, label);
+    },
+    [runTool]
   );
 
   const chooseCandidate = useCallback(
     (entity, candidate) => {
+      const offered = choiceRef.current;
+      if (busyRef.current
+          || !offered
+          || offered.entity !== entity
+          || !offered.candidates.some((c) => c.id === candidate.id)) return;
       const idField = `${entity}Id`;
       const nameField = `${entity}Name`;
-      setValues((prev) => ({ ...prev, [idField]: candidate.id, [nameField]: "" }));
-      setError(null);
-      run({ [idField]: candidate.id, [nameField]: "" });
+      const selection = `Use ${candidate.name} (${idField}: ${candidate.id}).`;
+      const context = contextRef.current;
+      if (context?.tool) {
+        return runTool(context.tool, { ...context.input, [idField]: candidate.id, [nameField]: "" }, undefined, selection);
+      }
+      // Resolution can fail before a tool is planned. Re-plan that request,
+      // rather than executing whichever tool happened to run previously.
+      if (failedRequestRef.current) return ask(`${failedRequestRef.current}\n${selection}`);
     },
-    [run]
+    [ask, runTool]
   );
 
   return {
@@ -311,6 +515,8 @@ export default function useAgent() {
     error,
     planning,
     assistantMessage,
+    outcomeId,
+    choice,
     messages,
     busy: phase === PHASES.RUNNING || phase === PHASES.COMMITTING || planning,
     selectTool,
@@ -322,5 +528,6 @@ export default function useAgent() {
     reset,
     clearHistory,
     chooseCandidate,
+    revise,
   };
 }

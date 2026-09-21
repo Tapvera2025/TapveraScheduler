@@ -9,13 +9,14 @@
 const clientService = require('../../services/client.service');
 const Client = require('../../models/Client');
 const { invalidInput, conflict } = require('../errors');
+const { requireStated } = require('../statedValue');
 
 const STATES = ['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT'];
 
 const parameters = {
   type: 'object',
   properties: {
-    clientName: { type: 'string', description: 'The client or customer name. REQUIRED.' },
+    clientName: { type: 'string', description: 'The client or customer name, exactly as the admin said it. REQUIRED. Omit this field entirely if the admin has not said it — never guess and never send a placeholder.' },
     state: { type: 'string', description: `Optional Australian state: ${STATES.join(', ')}.` },
     invoicingCompany: { type: 'string', description: 'Optional entity that invoices this client.' },
   },
@@ -23,9 +24,11 @@ const parameters = {
 };
 
 const build = async (actor, input) => {
-  if (!input.clientName) throw invalidInput('What is the client called?');
-
-  const clientName = input.clientName.trim();
+  const clientName = requireStated(input.clientName, {
+    question: 'What is the client called?',
+    field: 'clientName',
+    nouns: ['client', 'customer'],
+  });
 
   let state;
   if (input.state) {

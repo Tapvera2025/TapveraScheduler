@@ -11,22 +11,12 @@ const Company = require('../models/Company');
 const mongoose = require('mongoose');
 const emailService = require('./email.service');
 const logger = require('../utils/logger');
+// The one generator, shared with master.service and the CLI scripts. The copy
+// that used to live here built passwords from Math.random(), which is seeded
+// predictably and is not safe for a credential.
+const { generateTempPassword } = require('../utils/password');
 
 class EmployeeService {
-  /**
-   * Generate a random temporary password
-   * @returns {String} - Random password
-   */
-  generateTempPassword() {
-    const length = 12;
-    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
-    let password = '';
-    for (let i = 0; i < length; i++) {
-      password += charset.charAt(Math.floor(Math.random() * charset.length));
-    }
-    return password;
-  }
-
   /**
    * Get all employees with filters and pagination
    * @param {Object} context - { companyId, userId, role }
@@ -237,7 +227,8 @@ class EmployeeService {
       }
     }
 
-    // Auto-create User account for employee login (if password provided)
+    // Auto-create a User account so the employee can sign in, when the caller
+    // supplied a password or asked for a login to be created.
     let createdUserId = data.userId;
     let plainPassword = data.password; // Store for email
     let shouldSendEmail = false;
@@ -249,7 +240,14 @@ class EmployeeService {
       email: data.email,
     });
 
-    if (!data.userId && data.password) {
+    // A caller that wants the employee to be able to sign in, but has no
+    // business choosing their password, sets createLogin instead of password.
+    // The generated value is emailed to the employee and never returned, so it
+    // does not pass back through the caller.
+    const wantsLogin = Boolean(data.password) || data.createLogin === true;
+    delete data.createLogin;
+
+    if (!data.userId && wantsLogin) {
       // Check if user with this email already exists
       const existingUser = await User.findOne({
         email: data.email,
@@ -257,11 +255,13 @@ class EmployeeService {
       });
 
       if (!existingUser) {
+        const loginPassword = data.password || generateTempPassword();
+        plainPassword = loginPassword;
         // Create user account for the employee
         logger.info('Creating new user account for employee', { email: data.email });
         const newUser = await User.create({
           email: data.email,
-          password: data.password,
+          password: loginPassword,
           name: `${data.firstName} ${data.lastName}`,
           role: 'USER', // Employees get USER role by default
           companyId,
@@ -477,7 +477,7 @@ class EmployeeService {
 
         if (user) {
           // Generate new temporary password
-          const newPassword = this.generateTempPassword();
+          const newPassword = generateTempPassword();
 
           // Update user's email and password
           user.email = data.email;

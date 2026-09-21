@@ -20,6 +20,8 @@ const Client = require('../models/Client');
 const { invalidInput, notFound, ambiguous } = require('./errors');
 
 const MAX_CANDIDATES = 8;
+// A picker can show more than an "is it this one?" list, so this is larger.
+const CHOICE_LIMIT = 50;
 
 /** Escape a user-spoken string so it can never act as a regex. */
 const literal = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -34,6 +36,12 @@ const employeeCandidate = (e) => ({
   name: employeeLabel(e),
   position: e.position || null,
   department: e.department || null,
+});
+
+const clientCandidate = (c) => ({
+  id: c._id.toString(),
+  name: c.clientName,
+  state: c.state || null,
 });
 
 const siteCandidate = (s) => ({
@@ -119,6 +127,27 @@ const resolveEmployee = async (actor, ref) => {
 /**
  * Resolve free text to exactly one active site in the actor's company.
  */
+/**
+ * Every active site in the actor's company, as pickable choices.
+ *
+ * Used when a tool needs a site and was given none. The cap is generous because
+ * the client can render a long list as a dropdown, and `truncated` tells it when
+ * naming the site is the only way through.
+ */
+const siteChoices = async (actor, limit = CHOICE_LIMIT) => {
+  const found = await Site.find({ companyId: actor.companyId, status: 'ACTIVE' })
+    .select('_id siteLocationName shortName timezone')
+    .sort({ siteLocationName: 1 })
+    .limit(limit + 1)
+    .lean();
+
+  const truncated = found.length > limit;
+  return {
+    candidates: (truncated ? found.slice(0, limit) : found).map(siteCandidate),
+    truncated,
+  };
+};
+
 const resolveSite = async (actor, ref) => {
   const term = normalise(ref);
   if (term.length < 2) {
@@ -197,6 +226,25 @@ const resolveEmployeeRef = async (actor, { employeeId, employeeName }) => {
  * A site stores its client as a name, so this returns the canonical spelling
  * rather than whatever the admin happened to say.
  */
+/**
+ * Every client in the actor's company that a site can be filed under, as
+ * pickable choices. Same status rule as resolveClient, so nothing is offered
+ * that would then be refused.
+ */
+const clientChoices = async (actor, limit = CHOICE_LIMIT) => {
+  const found = await Client.find({ companyId: actor.companyId, status: { $ne: 'INACTIVE' } })
+    .select('_id clientName state')
+    .sort({ clientName: 1 })
+    .limit(limit + 1)
+    .lean();
+
+  const truncated = found.length > limit;
+  return {
+    candidates: (truncated ? found.slice(0, limit) : found).map(clientCandidate),
+    truncated,
+  };
+};
+
 const resolveClient = async (actor, ref) => {
   const term = normalise(ref);
   if (term.length < 2) {
@@ -227,26 +275,31 @@ const resolveClient = async (actor, ref) => {
       throw ambiguous(`More than one client matches "${term}". Which one did you mean?`, {
         entity: 'client',
         term,
-        candidates: found.slice(0, MAX_CANDIDATES).map((c) => ({
-          id: c._id.toString(),
-          name: c.clientName,
-          state: c.state || null,
-        })),
+        candidates: found.slice(0, MAX_CANDIDATES).map(clientCandidate),
       });
     }
   }
 
-  throw notFound(`No client named "${term}". Add the client first, then the site.`, {
+  // A misspelling is the common case here, so offer what does exist rather
+  // than leaving the admin to guess the exact spelling a second time.
+  const { candidates, truncated } = await clientChoices(actor);
+  throw notFound(`No client named "${term}".`, {
     entity: 'client',
     term,
+    choose: candidates.length > 0,
+    candidates,
+    truncated,
   });
 };
 
 module.exports = {
   resolveEmployee,
   resolveSite,
+  siteChoices,
   resolveClient,
+  clientChoices,
   resolveEmployeeRef,
   employeeCandidate,
+  clientCandidate,
   siteCandidate,
 };

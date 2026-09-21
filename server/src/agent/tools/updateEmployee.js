@@ -10,9 +10,20 @@ const employeeService = require('../../services/employee.service');
 const Employee = require('../../models/Employee');
 const { resolveEmployeeRef } = require('../resolver');
 const { invalidInput, conflict } = require('../errors');
+const { statedChange } = require('../statedValue');
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UPDATE_FIELDS = ['firstName', 'lastName', 'email', 'position', 'department', 'phone'];
+
+// What to ask when a field arrives as a placeholder rather than a value. Email
+// is absent because its format check already rejects anything that is not one.
+const ASK_INSTEAD = {
+  firstName: { question: 'What should their first name be?', nouns: ['first name', 'given name'] },
+  lastName: { question: 'What should their last name be?', nouns: ['last name', 'surname', 'family name'] },
+  position: { question: 'What should their job title be?', nouns: ['position', 'job title', 'title', 'role'] },
+  department: { question: 'Which department should they be in?', nouns: ['department', 'team'] },
+  phone: { question: 'What is their contact number?', nouns: ['phone', 'number', 'contact'] },
+};
 
 const parameters = {
   type: 'object',
@@ -34,9 +45,13 @@ const build = async (actor, input) => {
 
   const updates = {};
   for (const f of UPDATE_FIELDS) {
-    if (input[f] !== undefined && input[f] !== null && input[f] !== '') {
-      updates[f] = typeof input[f] === 'string' ? input[f].trim() : input[f];
+    if (input[f] === undefined || input[f] === null || input[f] === '') continue;
+    if (ASK_INSTEAD[f]) {
+      const value = statedChange(input[f], { ...ASK_INSTEAD[f], field: f });
+      if (value !== undefined) updates[f] = value;
+      continue;
     }
+    updates[f] = typeof input[f] === 'string' ? input[f].trim() : input[f];
   }
 
   if (Object.keys(updates).length === 0) {

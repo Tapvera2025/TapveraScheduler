@@ -440,8 +440,8 @@ class EmailService {
           has been created. You can sign in with the credentials below.
         </p>
         <p style="margin: 0;">
-          After your first sign-in you will be prompted to change this password to
-          something only you know.
+          Please change this password to something only you know once you are in,
+          from Change password in your profile menu.
         </p>
       `,
       card: {
@@ -462,7 +462,12 @@ class EmailService {
       supportNote: `If you were not expecting this email, please contact your administrator or reply to let us know.`,
     });
 
-    return this.sendEmail({ to, subject, html, companyId });
+    // Never BCC admins on this one either. The body carries a working
+    // password, so a courtesy copy hands every admin in the organisation a
+    // credential for somebody else's account — and it reaches them as an email
+    // that opens "Hello <employee>", which reads like it was misaddressed.
+    // The admin already sees the account appear in the app.
+    return this.sendEmail({ to, subject, html, companyId, bcc: null });
   }
 
   // ── Password reset ──────────────────────────────────────────────────────

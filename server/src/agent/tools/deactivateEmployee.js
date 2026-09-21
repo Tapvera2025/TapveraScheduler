@@ -66,6 +66,7 @@ const prepare = async ({ actor, input }) => {
 
 const commit = async ({ actor, draft }) => {
   const { employeeId } = draft.plan;
+  const employeeName = draft.resolvedEntities?.employee?.name || null;
 
   let result;
   try {
@@ -79,7 +80,7 @@ const commit = async ({ actor, draft }) => {
   }
 
   return {
-    data: { employeeId, cancelledShifts: result.cancelledShifts },
+    data: { employeeId, employee: employeeName, cancelledShifts: result.cancelledShifts },
     summary: { deactivated: true, employeeId, cancelledShifts: result.cancelledShifts },
   };
 };

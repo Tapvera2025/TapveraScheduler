@@ -37,7 +37,12 @@ const VAD_NOISE_MULTIPLIER = 3.5; // speech_threshold = noise_floor × this
 const VAD_SILENCE_MULTIPLIER = 1.8; // silence_threshold = noise_floor × this
 const VAD_SILENCE_MS = 450;       // ms of silence before endpointing
 const VAD_MIN_SPEECH_MS = 200;    // ignore clips shorter than this
-const VAD_MAX_CAPTURE_MS = 12000; // hard timeout
+const VAD_MAX_CAPTURE_MS = 12000; // hard timeout from opening the microphone
+const VAD_MAX_SPEECH_MS = 8000;   // hard timeout from the start of speech
+const VAD_DEFAULT_NOISE_FLOOR = 0.015;
+// A room does not read this loud. A calibration above it means we were
+// measuring a voice, not the background, so the default is safer.
+const VAD_MAX_NOISE_FLOOR = 0.05;
 
 const getRecognition = () =>
   typeof window !== "undefined"
@@ -158,16 +163,36 @@ export default function useVoice({ onCommand, greeting = "Yes boss" } = {}) {
       if (phase === "calibrating") {
         samples.push(level);
         if (Date.now() - calStart >= VAD_CALIBRATION_MS) {
-          noiseFloor = samples.length
-            ? samples.reduce((a, b) => a + b) / samples.length
-            : 0.015;
+          // The median, not the mean: people start talking the moment the
+          // microphone opens, and a mean over speech sets the floor so high
+          // that the speech threshold above it is never crossed. Nothing is
+          // then detected as speech, nothing endpoints, and the clip runs to
+          // the hard timeout — which reads as the assistant ignoring you.
+          const sorted = samples.slice().sort((a, b) => a - b);
+          const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+          noiseFloor =
+            !median || median > VAD_MAX_NOISE_FLOOR ? VAD_DEFAULT_NOISE_FLOOR : median;
           phase = "listening";
         }
         return;
       }
 
+      // Keep following the floor down while nothing has been said, so a
+      // calibration taken over a voice corrects itself within a second.
+      if (!hadSpeech && level < noiseFloor) {
+        noiseFloor = noiseFloor * 0.7 + level * 0.3;
+      }
+
       const speechThreshold = noiseFloor * VAD_NOISE_MULTIPLIER;
       const silenceThreshold = noiseFloor * VAD_SILENCE_MULTIPLIER;
+
+      // However the tail of the utterance behaves, stop a bounded time after
+      // speech began rather than holding the microphone open to the hard cap.
+      if (hadSpeech && speechStart && Date.now() - speechStart >= VAD_MAX_SPEECH_MS) {
+        clearInterval(tick);
+        onEndpoint();
+        return;
+      }
 
       if (level > speechThreshold) {
         if (!hadSpeech) { hadSpeech = true; speechStart = Date.now(); }
@@ -272,12 +297,12 @@ export default function useVoice({ onCommand, greeting = "Yes boss" } = {}) {
     source.connect(analyser);
 
     const vadCleanup = startVAD(analyser, () => {
-      ctx.close();
+      if (ctx.state !== "closed") ctx.close();
       pipeline.mark("vad_endpoint");
       stopCapture();
     });
 
-    vadCleanupRef.current = () => { vadCleanup(); ctx.close(); };
+    vadCleanupRef.current = () => { vadCleanup(); if (ctx.state !== "closed") ctx.close(); };
 
     // Hard timeout
     captureTimerRef.current = setTimeout(() => {
@@ -404,6 +429,12 @@ export default function useVoice({ onCommand, greeting = "Yes boss" } = {}) {
         .trim();
 
       if (rest.split(/\s+/).filter(Boolean).length >= 3) {
+        // The one place the browser recogniser supplies a command rather than
+        // just the wake word, so it is also the one place a name can be
+        // mangled without Whisper ever seeing it. Show exactly what was heard:
+        // server-side entity resolution is the safety net, but a misheard name
+        // has to be visible on screen, not silent.
+        setTranscript(rest);
         goTo(MODES.THINKING);
         commandRef.current?.(rest);
         return;

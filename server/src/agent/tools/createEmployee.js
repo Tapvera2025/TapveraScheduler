@@ -1,11 +1,18 @@
 /**
  * createEmployee — add a person to the organisation.
  *
- * Deliberately creates the employee RECORD only. It does not set a password,
- * does not mint a login, and does not send an invitation. Issuing someone
- * credentials by voice is a different decision from adding them to a roster,
- * and it should be made deliberately from the People screen rather than as a
- * side effect of a spoken sentence.
+ * Creates the employee record and their login, and emails them the credentials.
+ *
+ * It deliberately does not accept a password. A password given to the agent
+ * would be typed into a chat box, and from there it reaches the planner, the
+ * conversation history replayed to the model on every later turn, the browser's
+ * copy of the collected fields, the draft, and the permanent command ledger.
+ * None of those are places for a credential, and redacting six of them is
+ * weaker than not collecting it. So the service generates the password and
+ * emails it to the employee; nothing here ever holds it.
+ *
+ * An admin who needs to set a specific password does it on the People screen,
+ * which validates the request directly and keeps the model out of the path.
  *
  * Four things are genuinely required — first name, last name, email and
  * position — so the planner has to ask for what it was not told rather than
@@ -15,16 +22,17 @@
 const employeeService = require('../../services/employee.service');
 const Employee = require('../../models/Employee');
 const { invalidInput, conflict } = require('../errors');
+const { requireStated } = require('../statedValue');
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const parameters = {
   type: 'object',
   properties: {
-    firstName: { type: 'string', description: 'Given name, e.g. "Darchi".' },
-    lastName: { type: 'string', description: 'Family name. REQUIRED - ask for it if the admin only gave one name.' },
-    email: { type: 'string', description: 'Work email address. REQUIRED and must be a real address - never invent one.' },
-    position: { type: 'string', description: 'Job title, e.g. "Security Officer". REQUIRED - ask if not stated.' },
+    firstName: { type: 'string', description: 'Given name, e.g. "Darchi". REQUIRED. Omit this field entirely if the admin has not said it — never guess and never send a placeholder.' },
+    lastName: { type: 'string', description: 'Family name. REQUIRED - ask for it if the admin only gave one name. Omit this field entirely if the admin has not said it — never guess and never send a placeholder.' },
+    email: { type: 'string', description: 'Work email address. REQUIRED and must be a real address - never invent one. Omit this field entirely if the admin has not said it — never guess and never send a placeholder.' },
+    position: { type: 'string', description: 'Job title, e.g. "Security Officer". REQUIRED. Omit this field entirely if the admin has not said it — never guess and never send a placeholder.' },
     department: { type: 'string', description: 'Optional department or team.' },
     phone: { type: 'string', description: 'Optional contact number.' },
   },
@@ -32,22 +40,40 @@ const parameters = {
 };
 
 /** Shared by both phases, so commit re-checks rather than trusting the preview. */
-const build = async (actor, input) => {
-  const missing = ['firstName', 'lastName', 'email', 'position'].filter((f) => !input[f]);
+// One question per field, asked whether the field is absent or was filled in
+// with a placeholder — the admin has to answer it either way.
+const asked = {
+  firstName: 'What is their first name?',
+  lastName: 'What is their last name?',
+  email: 'What is their email address?',
+  position: 'What is their job title?',
+};
 
-  if (missing.length) {
-    const asked = {
-      firstName: 'What is their first name?',
-      lastName: 'What is their last name?',
-      email: 'What is their email address?',
-      position: 'What is their job title?',
-    };
-    throw invalidInput(asked[missing[0]], { missing });
-  }
+const build = async (actor, input) => {
+  const missing = Object.keys(asked).filter((f) => !input[f]);
+  if (missing.length) throw invalidInput(asked[missing[0]], { missing });
+
+  // Every check that needs no database runs first, so a placeholder is turned
+  // back into a question without a round-trip.
+  const firstName = requireStated(input.firstName, {
+    question: asked.firstName, field: 'firstName', nouns: ['first name', 'given name'],
+  });
+  const lastName = requireStated(input.lastName, {
+    question: asked.lastName, field: 'lastName', nouns: ['last name', 'surname', 'family name'],
+  });
+  const position = requireStated(input.position, {
+    question: asked.position, field: 'position', nouns: ['position', 'job title', 'title', 'role'],
+  });
 
   const email = input.email.trim().toLowerCase();
   if (!EMAIL_PATTERN.test(email)) {
     throw invalidInput(`"${input.email}" is not a valid email address`);
+  }
+  // Basic domain sanity: the part after the last dot should be 2–10 chars.
+  // Catches typos like "tapvera.iiiii" early, before the MX check at commit.
+  const tld = email.split('.').pop();
+  if (!tld || tld.length < 2 || tld.length > 10) {
+    throw invalidInput(`"${input.email}" does not look like a valid email domain`);
   }
 
   // Unique per company in the schema; check here so the preview can explain it
@@ -64,10 +90,10 @@ const build = async (actor, input) => {
   }
 
   return {
-    firstName: input.firstName.trim(),
-    lastName: input.lastName.trim(),
+    firstName,
+    lastName,
     email,
-    position: input.position.trim(),
+    position,
     department: input.department?.trim() || undefined,
     phone: input.phone?.trim() || undefined,
   };
@@ -77,7 +103,7 @@ const prepare = async ({ actor, input }) => {
   const person = await build(actor, input);
 
   return {
-    plan: { ...person },
+    plan: person,
     preview: {
       action: 'Add employee',
       employee: `${person.firstName} ${person.lastName}`,
@@ -85,8 +111,9 @@ const prepare = async ({ actor, input }) => {
       position: person.position,
       department: person.department || '—',
       phone: person.phone || '—',
+      login: 'Created, with a password emailed to them',
       notes: [
-        'No login is created. Invite them from the People screen when they need access.',
+        `A login is created and the credentials are emailed to ${person.email}.`,
         'They will not appear on a roster until assigned to a site.',
       ],
     },
@@ -98,14 +125,25 @@ const commit = async ({ actor, draft }) => {
   // Someone may have added this person in the meantime.
   const person = await build(actor, draft.input);
 
-  const created = await employeeService.createEmployee(
-    { companyId: actor.companyId, userId: actor.userId, role: actor.role },
-    {
-      ...person,
-      isActive: true,
-      // No password, so no User account is created. See the note at the top.
-    }
-  );
+  let created;
+  try {
+    created = await employeeService.createEmployee(
+      { companyId: actor.companyId, userId: actor.userId, role: actor.role },
+      {
+        ...person,
+        isActive: true,
+        // The service creates the User, generates the password and emails it.
+        // No password is passed in and none comes back.
+        createLogin: true,
+      }
+    );
+  } catch (err) {
+    // Convert service errors (email validation, duplicates, etc.) into
+    // AgentErrors so the gateway surfaces the real message instead of a
+    // generic "That action could not be completed" (HTTP 500).
+    if (err.statusCode === 409) throw conflict(err.message);
+    throw invalidInput(err.message || 'Could not create the employee');
+  }
 
   const id = (created?._id || created?.id || '').toString();
 
@@ -129,7 +167,7 @@ const commit = async ({ actor, draft }) => {
 module.exports = {
   name: 'createEmployee',
   description:
-    "Add a new person to the organisation. This CHANGES data, so it is previewed first and only created after the admin explicitly confirms. First name, last name, email and job title are all required - ask the admin for anything missing rather than guessing, and never invent an email address. This does not create a login for them.",
+    "Add a new person to the organisation and create their login. This CHANGES data, so it is previewed first and only created after the admin explicitly confirms. First name, last name, email and job title are all required - ask the admin for anything missing rather than guessing. Never invent an email address. Never ask for a password: the employee's password is generated and emailed to them.",
   kind: 'write',
   modules: [],
   roles: ['ADMIN', 'MANAGER'],

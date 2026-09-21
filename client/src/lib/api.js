@@ -22,12 +22,22 @@ api.interceptors.request.use(
   }
 );
 
+// A rejected sign-in is the sign-in form's own business. Everything else that
+// comes back 401 means the session is gone and belongs back at the login page.
+const isSignInRequest = (config) => /\/auth\/login\b/.test(config?.url || '');
+
 // Response interceptor for handling errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      // Clear all authentication data
+    if (error.response?.status === 401 && !isSignInRequest(error.config)) {
+      // Clear all authentication data.
+      //
+      // window.location.href is a full page load, so it wipes React state. On
+      // a rejected sign-in that meant the login page reloaded before it could
+      // render "invalid email or password" — the form looked like it was just
+      // refreshing itself, and the actual reason was never shown. Hence the
+      // exception above.
       clearSession();
       window.location.href = '/login';
     }
@@ -242,7 +252,7 @@ export const agentApi = {
   getTools: () => api.get('/agent/tools'),
   // Single round-trip: plan + execute/prepare in one call.
   // Returns { kind: 'reply'|'read'|'write', ... }
-  chat: (message, history = []) => api.post('/agent/chat', { message, history }),
+  chat: (message, history = [], context = null) => api.post('/agent/chat', { message, history, context }),
   // Transcribe audio via Groq Whisper. Returns { text, pipeline }.
   transcribe: (audioBlob) => {
     const form = new FormData();

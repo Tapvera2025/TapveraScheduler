@@ -46,6 +46,16 @@ const WEEKDAY_RE_SRC = Object.keys(WEEKDAY_MAP)
   .sort((a, b) => b.length - a.length)
   .join('|');
 
+// Bare three-letter abbreviations are ordinary English words too: "sat with the
+// team" is not Saturday, and "sun" and "mon" appear in normal sentences. They
+// are only read as weekdays when something else marks them as a date — a
+// modifier ("next sat") or a period ("sat morning"). A bare day name has to be
+// spelled out in full.
+const WEEKDAY_FULL_RE_SRC = Object.keys(WEEKDAY_MAP)
+  .filter((k) => k.length > 3)
+  .sort((a, b) => b.length - a.length)
+  .join('|');
+
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 const fmtDate = (dt) => dt.toFormat('yyyy-MM-dd');
@@ -76,6 +86,10 @@ const resolveWeekday = (name, now, modifier) => {
   if (modifier === 'this') {
     return now.startOf('week').plus({ days: target - 1 });
   }
+  // A bare day name on that very day means today. Someone saying "Friday" on a
+  // Friday is not asking about a week from now.
+  if (!modifier && now.weekday === target) return now;
+
   // 'next' or bare — next upcoming occurrence, at least 1 day away
   let d = now.plus({ days: 1 });
   while (d.weekday !== target) d = d.plus({ days: 1 });
@@ -130,6 +144,21 @@ const normalizeText = (text, timezone) => {
     return `${fmtDate(date)} ${fmtPeriod(period)} ${prot(match.trim())}`;
   });
 
+  // ── 1b. "this <period>" and "tonight" ──────────────────────────────────
+  // "this" on its own means today. Rule 1 only fires when a day word precedes
+  // the period, so without this rule "this afternoon" loses its date entirely
+  // and leaves a stray "this" in the text.
+  const thisPeriod = new RegExp(`\\bthis\\s+(${PERIOD_RE_SRC})\\b`, 'gi');
+  t = t.replace(thisPeriod, (match, periodWord) => {
+    const period = lookupPeriod(periodWord);
+    if (!period) return match;
+    return `${fmtDate(now)} ${fmtPeriod(period)} ${prot(match.trim())}`;
+  });
+  t = t.replace(/\btonight\b/gi, () => {
+    const period = lookupPeriod('night');
+    return `${fmtDate(now)} ${fmtPeriod(period)} ${prot('tonight')}`;
+  });
+
   // ── 2. "in N days / N days ago" ───────────────────────────────────────
   t = t.replace(/\bin\s+(\d+)\s+days?\b/gi, (m, n) =>
     `${fmtDate(now.plus({ days: +n }))} ${prot(m.trim())}`);
@@ -181,9 +210,9 @@ const normalizeText = (text, timezone) => {
   t = t.replace(/\byesterday\b/gi, () => `${fmtDate(now.minus({ days: 1 }))} ${prot('yesterday')}`);
 
   // ── 6. Bare weekday names ──────────────────────────────────────────────
-  const bareWeekday = new RegExp(`\\b(${WEEKDAY_RE_SRC})\\b`, 'gi');
+  const bareWeekday = new RegExp(`\\b(${WEEKDAY_FULL_RE_SRC})\\b`, 'gi');
   t = t.replace(bareWeekday, (match) => {
-    const date = resolveWeekday(match, now, 'next');
+    const date = resolveWeekday(match, now, null);
     return date ? `${fmtDate(date)} ${prot(match.trim())}` : match;
   });
 

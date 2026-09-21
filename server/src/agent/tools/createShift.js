@@ -15,10 +15,10 @@
 const schedulerService = require('../../services/scheduler.service');
 const Employee = require('../../models/Employee');
 const Site = require('../../models/Site');
-const { resolveEmployeeRef, resolveSite } = require('../resolver');
+const { resolveEmployeeRef, resolveSite, siteChoices } = require('../resolver');
 const { getCompanyProfile } = require('../tenant');
 const { shiftInstants, findConflicts, assertSiteAssignment } = require('../scheduling');
-const { invalidInput, notFound, conflict } = require('../errors');
+const { invalidInput, needsChoice, notFound, conflict } = require('../errors');
 
 const SHIFT_TYPES = ['REGULAR', 'OVERTIME', 'ON_CALL', 'NIGHT'];
 
@@ -47,7 +47,22 @@ const resolveSiteRef = async (actor, { siteId, siteName }) => {
     return { id: site._id.toString(), name: site.siteLocationName, timezone: site.timezone || null, status: site.status };
   }
   if (siteName) return resolveSite(actor, siteName);
-  throw invalidInput('Which site should the shift be at?', { missing: ['siteName'] });
+
+  // Asking "which site?" on its own puts the admin back in the app to look a
+  // name up, mid-sentence. The company's own list of active sites is one query
+  // away, so the question arrives with the answers attached.
+  const { candidates, truncated } = await siteChoices(actor);
+  if (!candidates.length) {
+    throw invalidInput(
+      'There are no active sites to roster onto yet. Add a site first.',
+      { missing: ['siteName'] }
+    );
+  }
+  throw needsChoice('Which site should the shift be at?', {
+    entity: 'site',
+    candidates,
+    truncated,
+  });
 };
 
 /** Everything both phases need. Run again at commit, deliberately. */

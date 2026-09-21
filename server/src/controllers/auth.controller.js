@@ -12,6 +12,23 @@ const { getEnabledModules, loadCompanyAccess } = require('../middleware/moduleAc
 const { MODULE_KEYS } = require('../config/modules');
 
 /**
+ * The form an address takes once dots and a +tag have been removed from the
+ * local part, plus the googlemail alias folded onto gmail.
+ *
+ * This reproduces, without a provider list, what normalizeEmail() did to
+ * addresses on their way into the database. It exists only so accounts stored
+ * in that rewritten form can still be found from the address a person actually
+ * types. Nothing is written in this form any more.
+ */
+const strippedEmail = (email) => {
+  const at = String(email || '').lastIndexOf('@');
+  if (at < 1) return String(email || '');
+  const local = email.slice(0, at).replace(/\+.*$/, '').replace(/\./g, '');
+  const domain = email.slice(at + 1) === 'googlemail.com' ? 'gmail.com' : email.slice(at + 1);
+  return local ? `${local}@${domain}` : String(email);
+};
+
+/**
  * Generate JWT token
  */
 const generateToken = (userId, companyId, role) => {
@@ -39,7 +56,22 @@ const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
   // 1. Find user by email (include password field)
-  const user = await User.findOne({ email, isActive: true }).select('+password');
+  //
+  // Two stored forms exist. Accounts created through the REST validators were
+  // saved after normalizeEmail() had stripped dots and +tags from the local
+  // part; accounts created anywhere else — the agent, scripts, seeds — hold the
+  // address as it was typed. Try the literal form first so an exact match
+  // always wins, then the stripped form so the older records still sign in.
+  // Either way the password still has to match, so this widens the lookup, not
+  // the credential check.
+  let user = await User.findOne({ email, isActive: true }).select('+password');
+
+  if (!user) {
+    const stripped = strippedEmail(email);
+    if (stripped !== email) {
+      user = await User.findOne({ email: stripped, isActive: true }).select('+password');
+    }
+  }
 
   if (!user) {
     return res.status(401).json({
@@ -168,5 +200,7 @@ const logout = asyncHandler(async (req, res) => {
 module.exports = {
   login,
   getMe,
-  logout
+  logout,
+  // Exported for the lookup-fallback tests.
+  strippedEmail,
 };
