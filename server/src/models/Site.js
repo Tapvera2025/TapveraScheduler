@@ -21,7 +21,6 @@ const siteSchema = new mongoose.Schema(
 
     shortName: {
       type: String,
-      required: [true, 'Short name is required'],
       trim: true,
       maxlength: [50, 'Short name cannot exceed 50 characters'],
       index: true,
@@ -44,7 +43,6 @@ const siteSchema = new mongoose.Schema(
 
     client: {
       type: String,
-      required: [true, 'Client is required'],
       trim: true,
     },
 

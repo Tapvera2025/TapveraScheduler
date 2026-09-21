@@ -10,8 +10,8 @@ const createSiteValidation = [
     .isLength({ max: 255 }).withMessage('Site location name must not exceed 255 characters'),
 
   body('shortName')
+    .optional({ checkFalsy: true })
     .trim()
-    .notEmpty().withMessage('Short name is required')
     .isLength({ max: 50 }).withMessage('Short name must not exceed 50 characters'),
 
   body('jobRefNo')
@@ -24,8 +24,8 @@ const createSiteValidation = [
     .isIn(['ACTIVE', 'INACTIVE']).withMessage('Status must be either ACTIVE or INACTIVE'),
 
   body('client')
+    .optional({ checkFalsy: true })
     .trim()
-    .notEmpty().withMessage('Client is required')
     .isLength({ max: 255 }).withMessage('Client must not exceed 255 characters'),
 
   body('flatBillingRate')
@@ -131,9 +131,9 @@ const updateSiteValidation = [
     .isLength({ min: 1, max: 255 }).withMessage('Site location name must be between 1 and 255 characters'),
 
   body('shortName')
-    .optional()
+    .optional({ checkFalsy: true })
     .trim()
-    .isLength({ min: 1, max: 50 }).withMessage('Short name must be between 1 and 50 characters'),
+    .isLength({ max: 50 }).withMessage('Short name must not exceed 50 characters'),
 
   // Reuse most validations from create, but make them all optional
   ...createSiteValidation.filter(validation =>
@@ -143,9 +143,9 @@ const updateSiteValidation = [
   ),
 
   body('client')
-    .optional()
+    .optional({ checkFalsy: true })
     .trim()
-    .isLength({ min: 1, max: 255 }).withMessage('Client must be between 1 and 255 characters')
+    .isLength({ max: 255 }).withMessage('Client must not exceed 255 characters')
 ];
 
 /**
