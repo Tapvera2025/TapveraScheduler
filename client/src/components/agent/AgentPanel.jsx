@@ -18,6 +18,8 @@ import { Select } from "../ui/Select";
 import { Label } from "../ui/Label";
 import useAgent from "./useAgent";
 import AgentResult from "./AgentResult";
+import ChoiceList from "./ChoiceList";
+import SiteLocationControl from "./SiteLocationControl";
 
 const titleCase = (name) =>
   name.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
@@ -86,7 +88,7 @@ function PipelineBadge({ pipeline }) {
 
 /** Render a generic write-preview from the preview object returned by any tool's prepare(). */
 function WritePreview({ preview, skip = [] }) {
-  const SKIP = new Set(["action", "notes", "conflicts", ...skip]);
+  const SKIP = new Set(["action", "notes", "conflicts", "geofence", ...skip]);
   const LABELS = {
     employee: "Employee",
     site: "Site",
@@ -109,19 +111,31 @@ function WritePreview({ preview, skip = [] }) {
     address: "Address",
     townSuburb: "Suburb / Town",
     status: "Current status",
-    timezone: "Timezone",
+    changes: "Changes",
+    futureShiftsAffected: "Shifts affected",
+    currentStart: "Current start",
+    currentEnd: "Current end",
   };
 
   const facts = Object.entries(preview)
-    .filter(([k, v]) => !SKIP.has(k) && v !== null && v !== undefined && v !== "—" && v !== false)
+    .filter(([k, v]) => {
+      if (SKIP.has(k)) return false;
+      if (v === null || v === undefined || v === "—" || v === false) return false;
+      if (Array.isArray(v) && v.length === 0) return false;
+      // A plain object is data for a control (the map picker's starting
+      // point, say), not a fact; as text it would read "[object Object]".
+      if (typeof v === "object" && !Array.isArray(v)) return false;
+      return true;
+    })
     .map(([k, v]) => {
-      let display = String(v);
-      if (k === "hours" && preview.paidHours != null)
-        display = `${v}h gross · ${preview.paidHours}h paid`;
+      let display;
+      if (Array.isArray(v)) display = v.join(", ");
+      else if (k === "hours" && preview.paidHours != null) display = `${v}h gross · ${preview.paidHours}h paid`;
       else if (typeof v === "boolean") display = v ? "Yes" : "No";
+      else display = String(v);
       return [LABELS[k] || titleCase(k), display];
     })
-    .filter(([, v]) => v !== "undefined" && v !== "null");
+    .filter(([, v]) => v !== "undefined" && v !== "null" && v !== "0");
 
   return (
     <dl className="agent-facts">
@@ -152,7 +166,22 @@ function MessageBubble({ msg, agent }) {
     return (
       <div className="agent-msg agent-msg--assistant">
         <Sparkles size={12} className="shrink-0 mt-0.5" />
-        <span>{msg.content}</span>
+        <div className="flex-1 min-w-0">
+          <span>{msg.content}</span>
+          <ChoiceList
+            entity={msg.details?.entity}
+            candidates={candidates}
+            truncated={msg.details?.truncated}
+            disabled={agent.busy}
+            onChoose={agent.chooseCandidate}
+          />
+          <SiteLocationControl
+            location={msg.details?.location}
+            geofence={msg.details?.geofence}
+            disabled={agent.busy}
+            onSet={agent.revise}
+          />
+        </div>
       </div>
     );
   }
@@ -190,6 +219,12 @@ function MessageBubble({ msg, agent }) {
           </div>
         )}
         <WritePreview preview={preview} skip={preview.employee ? ["employee", "start", "end", "site"] : []} />
+        <SiteLocationControl
+          location={preview.location}
+          geofence={preview.geofence}
+          disabled={agent.busy}
+          onSet={agent.revise}
+        />
         {preview.notes?.length > 0 && (
           <ul className="agent-notes">
             {preview.notes.map((n, i) => <li key={i}>{n}</li>)}
@@ -218,24 +253,14 @@ function MessageBubble({ msg, agent }) {
         <AlertTriangle size={13} className="shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
           <p>{msg.message}</p>
-          {candidates.length > 0 && (
-            <div className="agent-candidates mt-2">
-              <p className="eyebrow">DID YOU MEAN</p>
-              {candidates.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className="agent-candidate"
-                  onClick={() => agent.chooseCandidate(msg.details?.entity, c)}
-                >
-                  <strong>{c.name}</strong>
-                  <span>
-                    {[c.position, c.department, c.shortName].filter(Boolean).join(" · ") || "—"}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+          <ChoiceList
+            entity={msg.details?.entity}
+            candidates={candidates}
+            truncated={msg.details?.truncated}
+            label={msg.details?.choose ? "CHOOSE ONE" : "DID YOU MEAN"}
+            disabled={agent.busy}
+            onChoose={agent.chooseCandidate}
+          />
           {conflicts.length > 0 && (
             <div className="agent-candidates mt-2">
               <p className="eyebrow">CLASHES WITH</p>
@@ -260,6 +285,7 @@ export default function AgentPanel({ open, onClose }) {
   const [question, setQuestion] = useState("");
   const threadRef = useRef(null);
   const inputRef = useRef(null);
+  const panelRef = useRef(null);
 
   const { PHASES, tools, toolsError, tool, fields, values, phase, messages, busy, planning } =
     agent;
@@ -275,6 +301,22 @@ export default function AgentPanel({ open, onClose }) {
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 80);
   }, [open]);
+
+  // Close on click outside the panel. Modals opened from inside the panel
+  // (the map picker, warning dialogs) render into a portal under
+  // `.modal-layer`, so clicks there must NOT close the chat.
+  useEffect(() => {
+    if (!open) return;
+    const handleOutsideClick = (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (panelRef.current?.contains(target)) return;
+      if (target.closest(".modal-layer")) return;
+      onClose();
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -300,7 +342,7 @@ export default function AgentPanel({ open, onClose }) {
   };
 
   return (
-    <aside className="agent-panel" aria-label="Operations assistant">
+    <aside ref={panelRef} className="agent-panel" aria-label="Operations assistant">
       {/* Header */}
       <header className="agent-panel-head">
         <div className="agent-panel-title">
@@ -433,17 +475,17 @@ export default function AgentPanel({ open, onClose }) {
           onChange={(e) => setQuestion(e.target.value)}
           placeholder={
             awaitingConfirm
-              ? "Confirm or cancel above first…"
+              ? "Confirm, cancel, or describe a change…"
               : "Ask anything or describe what you need"
           }
-          disabled={busy || awaitingConfirm}
+          disabled={busy}
           aria-label="Ask the assistant"
           className="flex-1"
         />
         <Button
           type="submit"
           size="icon"
-          disabled={busy || !question.trim() || awaitingConfirm}
+          disabled={busy || !question.trim()}
           aria-label="Send"
         >
           {planning ? <Loader2 size={15} className="animate-spin" /> : <SendHorizontal size={15} />}
