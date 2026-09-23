@@ -333,7 +333,8 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
       }
 
       onClose();
-      if (onSuccess) onSuccess();
+      // Hand the saved site back so the caller can use it right away
+      if (onSuccess) onSuccess(response.data?.data);
     } catch (err) {
       const apiErrors = err.response?.data?.errors;
       if (apiErrors) {

@@ -1,5 +1,5 @@
 import ShiftAgenda from "../components/scheduler/ShiftAgenda";
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import {
   User,
   MapPin,
@@ -79,18 +79,19 @@ export default function Scheduler() {
     return `${y}-${m}-${d}`;
   };
 
-  // Fetch sites on mount
-  useEffect(() => {
-    const fetchSites = async () => {
-      try {
-        const response = await schedulerApi.getSites();
-        setSites(response.data.data);
-      } catch (err) {
-        toast.error("Failed to load sites");
-      }
-    };
-    fetchSites();
+  // Load the site list on mount, and again when a site is added from the shift window
+  const fetchSites = useCallback(async () => {
+    try {
+      const response = await schedulerApi.getSites();
+      setSites(response.data.data);
+    } catch {
+      toast.error("Failed to load sites");
+    }
   }, []);
+
+  useEffect(() => {
+    fetchSites();
+  }, [fetchSites]);
 
   // Fetch employees and shifts when site is selected
   useEffect(() => {
@@ -1419,6 +1420,7 @@ export default function Scheduler() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveShift}
+        onSiteCreated={fetchSites}
         sites={sites}
         selectedSite={selectedSite}
         selectedDate={modalData.date}

@@ -1,11 +1,12 @@
 import Modal from "../ui/Modal";
 import { useState, useEffect, useMemo } from "react";
-import { X, Copy, Clock } from "lucide-react";
+import { X, Copy, Clock, Plus } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { Label } from "../ui/Label";
 import { Textarea } from "../ui/Textarea";
+import AddSiteModal from "../sites/AddSiteModal";
 import { schedulerApi } from "../../lib/api";
 import toast from "react-hot-toast";
 
@@ -52,6 +53,7 @@ export default function AddShiftModal({
   isOpen,
   onClose,
   onSave,
+  onSiteCreated,
   sites = [],
   selectedSite,
   selectedDate,
@@ -59,6 +61,7 @@ export default function AddShiftModal({
 }) {
   const [employees, setEmployees] = useState([]);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [showAddSite, setShowAddSite] = useState(false);
 
   const todayStr = toLocalDateStr(new Date());
 
@@ -142,6 +145,20 @@ export default function AddShiftModal({
     } else {
       setFormData((prev) => ({ ...prev, [field]: value }));
     }
+  };
+
+  // A site added from this window: reload the site list, then select it
+  const handleSiteCreated = async (site) => {
+    toast.success("Site created successfully");
+    await onSiteCreated?.(site);
+
+    const newSiteId = site?.id || site?._id;
+    if (!newSiteId) return;
+    if (site.status === "INACTIVE") {
+      toast("The new site is inactive, so it can't be used for shifts yet");
+      return;
+    }
+    handleChange("siteId", String(newSiteId));
   };
 
   const updateEntry = (index, field, value) => {
@@ -229,19 +246,30 @@ export default function AddShiftModal({
             {/* Site */}
             <div>
               <Label>Site *</Label>
-              <Select
-                value={formData.siteId}
-                onChange={(e) => handleChange("siteId", e.target.value)}
-                className="mt-1"
-                required
-              >
-                <option value="">Select Site...</option>
-                {sites.map((site) => (
-                  <option key={site.id} value={site.id}>
-                    {site.shortName} - {site.siteLocationName}
-                  </option>
-                ))}
-              </Select>
+              <div className="mt-1 flex items-center gap-2">
+                <Select
+                  value={formData.siteId}
+                  onChange={(e) => handleChange("siteId", e.target.value)}
+                  wrapperClassName="flex-1"
+                  required
+                >
+                  <option value="">Select Site...</option>
+                  {sites.map((site) => (
+                    <option key={site.id} value={site.id}>
+                      {site.shortName} - {site.siteLocationName}
+                    </option>
+                  ))}
+                </Select>
+                <Button
+                  variant="outline"
+                  className="px-3"
+                  onClick={() => setShowAddSite(true)}
+                  title="Add a new site"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span className="sr-only sm:not-sr-only">Add site</span>
+                </Button>
+              </div>
             </div>
 
             {/* Employee and Position */}
@@ -453,6 +481,13 @@ export default function AddShiftModal({
           </div>
         </form>
       </div>
+
+      {showAddSite && (
+        <AddSiteModal
+          onClose={() => setShowAddSite(false)}
+          onSuccess={handleSiteCreated}
+        />
+      )}
     </Modal>
   );
 }
