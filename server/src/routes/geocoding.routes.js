@@ -19,7 +19,7 @@ const { auth, authorize } = require('../middleware/auth');
  */
 router.get('/search', auth, async (req, res) => {
   try {
-    const { q: query, countryCode, limit = 5 } = req.query;
+    const { q: query, countryCode, limit = 5, lat, lon } = req.query;
 
     // Validation
     if (!query || query.trim().length < 1) {
@@ -36,6 +36,8 @@ router.get('/search', auth, async (req, res) => {
       query: query.trim(),
       countryCode,
       limit: resultLimit,
+      lat: lat != null ? parseFloat(lat) : undefined,
+      lon: lon != null ? parseFloat(lon) : undefined,
     });
 
     res.json({

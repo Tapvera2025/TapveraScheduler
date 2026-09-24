@@ -547,6 +547,41 @@ class ClockInOutService {
   }
 
   /**
+   * Return all currently-clocked-in records for the company, optionally
+   * filtered to a single site. Used by the live status dashboard.
+   */
+  async getLiveStatus(context, filters = {}) {
+    const { companyId, role } = context;
+    if (!['ADMIN', 'MANAGER'].includes(role)) {
+      const error = new Error('Unauthorized');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    const { siteId } = filters;
+
+    // Start of today in UTC (safe for sorting; display uses local tz on client)
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const query = {
+      companyId,
+      clockInTime: { $gte: todayStart },
+    };
+    if (siteId && mongoose.Types.ObjectId.isValid(siteId)) {
+      query.siteId = siteId;
+    }
+
+    const records = await TimeRecord.find(query)
+      .populate('employeeId', 'firstName lastName email position department')
+      .populate('siteId', 'siteLocationName shortName')
+      .sort({ status: 1, clockInTime: 1 }) // CLOCKED_IN before CLOCKED_OUT alphabetically
+      .lean();
+
+    return records;
+  }
+
+  /**
    * Export time records to CSV
    * @param {Object} context - { companyId, role }
    * @param {Object} filters - { startDate, endDate, siteId, employeeId }

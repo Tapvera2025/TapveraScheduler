@@ -188,33 +188,26 @@ class UserService {
     delete userObj.refreshToken;
     delete userObj.passwordResetToken;
 
-    // Send welcome email with login credentials
-    try {
-      // Get company name for email
-      const company = await Company.findById(companyId);
-      const companyName = company?.name || 'Your Company';
-
-      await emailService.sendWelcomeEmail({
-        to: user.email,
-        name: user.name,
-        email: user.email,
-        password: plainPassword,
-        role: user.role,
-        companyName,
-      });
-
-      logger.info('Welcome email sent successfully', {
-        userId: user._id,
-        email: user.email,
-      });
-    } catch (emailError) {
-      // Log error but don't fail user creation if email fails
-      logger.error('Failed to send welcome email', {
-        userId: user._id,
-        email: user.email,
-        error: emailError.message,
-      });
-    }
+    // Fire-and-forget: SMTP delivery must not block the HTTP response.
+    Company.findById(companyId)
+      .then((company) =>
+        emailService.sendWelcomeEmail({
+          to: user.email,
+          name: user.name,
+          email: user.email,
+          password: plainPassword,
+          role: user.role,
+          companyName: company?.name || 'Your Company',
+        })
+      )
+      .then(() => logger.info('Welcome email sent', { userId: user._id }))
+      .catch((emailError) =>
+        logger.error('Failed to send welcome email', {
+          userId: user._id,
+          email: user.email,
+          error: emailError.message,
+        })
+      );
 
     return userObj;
   }

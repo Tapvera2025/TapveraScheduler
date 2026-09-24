@@ -43,8 +43,8 @@ const createEmployeeValidation = [
     .isBoolean()
     .withMessage('isActive must be a boolean'),
 
-  // Optional. Supplying one creates a portal login for this employee; leaving it
-  // blank creates an employee record with no login at all.
+  // Optional. A supplied password updates or creates the portal login.
+  // Leaving it blank preserves the password unless the email is changed.
   body('password')
     .optional({ nullable: true, checkFalsy: true })
     .isLength({ min: 8 })
@@ -65,6 +65,14 @@ const createEmployeeValidation = [
 ];
 
 // Update employee validation
+//
+// Deliberately NOT normalizeEmail(). That sanitiser rewrites the address
+// before the controller sees it — for Gmail it strips dots and +tags from the
+// local part — so "john.doe@gmail.com" arrives as "johndoe@gmail.com". When
+// the stored email differs from the rewritten form the service treats the
+// email as changed, which triggers a password reset with a random temp
+// password and silently locks the employee out. Trim and lowercase only; the
+// service's own emailValidation utility handles normalisation safely.
 const updateEmployeeValidation = [
   param('id')
     .notEmpty()
@@ -86,12 +94,14 @@ const updateEmployeeValidation = [
     .optional()
     .isEmail()
     .withMessage('Email must be valid')
-    .normalizeEmail(),
+    .trim()
+    .toLowerCase(),
 
   body('phone')
-    .optional({ nullable: true })
-    .isMobilePhone()
-    .withMessage('Phone must be a valid mobile number'),
+    .optional({ nullable: true, checkFalsy: true })
+    .trim()
+    .matches(/^[\d\s\-+()]{6,20}$/)
+    .withMessage('Phone can contain digits, spaces and + - ( ) only'),
 
   body('position')
     .optional()

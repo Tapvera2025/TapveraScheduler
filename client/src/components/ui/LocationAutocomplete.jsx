@@ -4,6 +4,38 @@ import { cn } from "../../lib/utils";
 import { geocodingApi } from "../../lib/api";
 import { STATE_GROUPS } from "../../constants/locations";
 
+// Shared across all instances so the browser only asks for permission once
+// per session. Value is { lat, lon } on success, 'unavailable' on failure.
+let _sessionLocation = null;
+let _locationPromise = null;
+
+function getSessionLocation() {
+  if (_sessionLocation !== null) {
+    return Promise.resolve(_sessionLocation === "unavailable" ? null : _sessionLocation);
+  }
+  if (!_locationPromise) {
+    _locationPromise = new Promise((resolve) => {
+      if (!navigator?.geolocation) {
+        _sessionLocation = "unavailable";
+        return resolve(null);
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          _sessionLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+          resolve(_sessionLocation);
+        },
+        () => {
+          _sessionLocation = "unavailable";
+          resolve(null);
+        },
+        // Low-accuracy, prefer cached fix — fast and avoids a fresh GPS request
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
+      );
+    });
+  }
+  return _locationPromise;
+}
+
 export function LocationAutocomplete({
   value,
   onChange,
@@ -13,6 +45,11 @@ export function LocationAutocomplete({
   // Empty string / undefined = no country filter (worldwide search).
   // Callers may pass "au", "in", etc. to restrict.
   countryCode = "",
+  // Optional explicit coordinates to bias results toward (e.g. an already-
+  // pinned site location). When omitted the component falls back to the
+  // browser's geolocation.
+  biasLat = null,
+  biasLon = null,
   disabled = false,
   ...props
 }) {
@@ -23,6 +60,19 @@ export function LocationAutocomplete({
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const debounceTimeout = useRef(null);
   const wrapperRef = useRef(null);
+  // Bias ref so the debounced fetch always reads the latest value
+  const biasRef = useRef(null);
+
+  // Resolve the search bias: explicit props win, browser geolocation as fallback
+  useEffect(() => {
+    if (biasLat != null && biasLon != null) {
+      biasRef.current = { lat: biasLat, lon: biasLon };
+      return;
+    }
+    getSessionLocation().then((loc) => {
+      if (loc) biasRef.current = loc;
+    });
+  }, [biasLat, biasLon]);
 
   // Update input value when prop value changes
   useEffect(() => {
@@ -50,7 +100,14 @@ export function LocationAutocomplete({
 
     try {
       setIsLoading(true);
-      const response = await geocodingApi.search(query, countryCode, 5);
+      const bias = biasRef.current;
+      const response = await geocodingApi.search(
+        query,
+        countryCode,
+        5,
+        bias?.lat ?? null,
+        bias?.lon ?? null
+      );
       const data = response.data.data || [];
 
       const formattedSuggestions = data.map((item) => ({
@@ -112,10 +169,17 @@ export function LocationAutocomplete({
       return stateName;
     };
 
-    // Extract address components
+    // Build the address line: prefer "Building Name, Street" for named POIs,
+    // fall back to just the street, and finally to the first display_name segment.
+    const poiName = suggestion.address.name || "";
+    const road = suggestion.address.road || suggestion.address.street || "";
+    const addressLine = poiName
+      ? road ? `${poiName}, ${road}` : poiName
+      : road || suggestion.display_name.split(",")[0]?.trim() || "";
+
     const addressData = {
       fullAddress: suggestion.display_name,
-      address: suggestion.address.road || suggestion.address.street || "",
+      address: addressLine,
       townSuburb:
         suggestion.address.suburb ||
         suggestion.address.town ||

@@ -1,4 +1,4 @@
-import { LayoutDashboard, CalendarDays, CalendarPlus, Clock3, ClipboardList, Fingerprint, Users, CalendarOff, MapPin, Building2, Settings2, UserRound, KeyRound } from "lucide-react";
+import { LayoutDashboard, CalendarDays, CalendarPlus, Clock3, ClipboardList, Fingerprint, Users, CalendarOff, MapPin, Building2, Settings2, UserRound, KeyRound, Activity } from "lucide-react";
 import { MODULES } from "../../constants/modules";
 
 export function getNavigation(role, hasModule = () => true) {
@@ -28,6 +28,7 @@ export function getNavigation(role, hasModule = () => true) {
     ] },
     { label: "ORGANISATION", items: [
       { to: "/employees", label: "Employees management", icon: Users },
+      { to: "/employees/current-status", label: "Current status", icon: Activity },
       { to: "/employees/leave", label: "Leave management", icon: CalendarOff, module: MODULES.LEAVE },
       { to: "/company/sites", label: "Sites & locations", icon: MapPin, module: MODULES.SITES },
       { to: "/company/clients", label: "Clients", icon: Building2, module: MODULES.CLIENTS },

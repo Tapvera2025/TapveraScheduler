@@ -31,6 +31,91 @@ class GeocodingService {
   constructor() {
     this.searchURL = 'https://nominatim.openstreetmap.org/search';
     this.reverseURL = 'https://nominatim.openstreetmap.org/reverse';
+    // Photon (by Komoot) — same OSM data, much better POI / building name
+    // coverage.  Used as a fallback when Nominatim returns zero results for a
+    // query (common with business names, hospitals, landmarks, etc.).
+    this.photonURL = 'https://photon.komoot.io/api/';
+  }
+
+  /**
+   * Convert a Photon GeoJSON feature to the same flat shape that Nominatim
+   * results use, so the client needs no changes.
+   */
+  normalizePhotonFeature(feature) {
+    const p = feature.properties || {};
+    const [lon, lat] = feature.geometry?.coordinates ?? [0, 0];
+
+    const houseNumber = p.housenumber || '';
+    const street = p.street || '';
+    const road = [houseNumber, street].filter(Boolean).join(' ').trim();
+
+    const suburb = p.suburb || p.district || p.locality || p.city || '';
+    const state = this.mapStateToCode(p.state || '');
+    const country = p.countrycode ? String(p.countrycode).toUpperCase() : (p.country || '');
+
+    const nameParts = [
+      p.name,
+      road,
+      suburb,
+      p.city && p.city !== suburb ? p.city : null,
+      state,
+      country,
+    ].filter(Boolean);
+
+    return {
+      display_name: nameParts.join(', '),
+      address: {
+        name: p.name || '',
+        road,
+        street: road,
+        suburb,
+        town: suburb,
+        city: suburb,
+        state,
+        postcode: p.postcode || '',
+        country,
+      },
+      lat: String(lat),
+      lon: String(lon),
+      place_id: `photon-${p.osm_id ?? Math.random()}`,
+      type: p.osm_value || p.type || 'place',
+      importance: 0,
+    };
+  }
+
+  /**
+   * Fallback POI search via Photon when Nominatim returns nothing.
+   * Photon natively accepts lat/lon proximity so no viewbox needed.
+   */
+  async searchPhoton({ query, countryCode, limit, lat, lon }) {
+    const params = {
+      q: query,
+      limit,
+      lang: 'en',
+    };
+    if (Number.isFinite(parseFloat(lat)) && Number.isFinite(parseFloat(lon))) {
+      params.lat = lat;
+      params.lon = lon;
+    }
+    if (countryCode) {
+      params.bbox = undefined; // Photon uses countrycode differently; skip for now
+    }
+
+    try {
+      const response = await axios.get(this.photonURL, {
+        params,
+        timeout: 8000,
+        headers: { 'User-Agent': USER_AGENT },
+      });
+
+      const features = response.data?.features ?? [];
+      return features
+        .filter((f) => f.geometry?.coordinates)
+        .map((f) => this.normalizePhotonFeature(f));
+    } catch (err) {
+      logger.warn('Photon fallback search failed', { query, message: err.message });
+      return [];
+    }
   }
 
   /**
@@ -87,7 +172,21 @@ class GeocodingService {
       raw.municipality ||
       '';
 
+    // Named POIs (hospitals, offices, shops, amenities …) expose a name-like
+    // field alongside the road. Capture it so the client can display
+    // "Building Name, Street" instead of just "Street".
+    const poiName =
+      raw.amenity ||
+      raw.office ||
+      raw.shop ||
+      raw.leisure ||
+      raw.tourism ||
+      raw.building ||
+      raw.man_made ||
+      '';
+
     return {
+      name: poiName,
       road: street,
       street,
       suburb,
@@ -109,14 +208,19 @@ class GeocodingService {
    * @param {Number} [opts.limit=5]    Max predictions to return. Capped at 10.
    * @returns {Promise<Array>}
    */
-  async search({ query, countryCode, limit = 5 }) {
+  async search({ query, countryCode, limit = 5, lat, lon }) {
     if (!query || String(query).trim().length < 1) {
       return [];
     }
 
     const trimmedQuery = String(query).trim();
     const resultLimit = Math.min(parseInt(limit, 10) || 5, 10);
-    const cacheKey = `search:${trimmedQuery}:${countryCode || 'all'}:${resultLimit}`;
+    // Round to 2dp (~1 km) so nearby queries share a cache entry
+    const biasKey =
+      lat != null && lon != null
+        ? `:${Number(lat).toFixed(2)}:${Number(lon).toFixed(2)}`
+        : '';
+    const cacheKey = `search:${trimmedQuery}:${countryCode || 'all'}:${resultLimit}${biasKey}`;
     const cached = geocodeCache.get(cacheKey);
     if (cached) return cached;
 
@@ -130,6 +234,16 @@ class GeocodingService {
       if (countryCode) {
         params.countrycodes = String(countryCode).toLowerCase();
       }
+      // Location bias: boost results near the supplied coordinates without
+      // restricting the result set (bounded=0 lets Nominatim fall back to
+      // global matches when nothing relevant is nearby).
+      const latF = parseFloat(lat);
+      const lonF = parseFloat(lon);
+      if (Number.isFinite(latF) && Number.isFinite(lonF)) {
+        // Nominatim viewbox format: left,top,right,bottom (minLon,maxLat,maxLon,minLat)
+        params.viewbox = `${lonF - 0.5},${latF + 0.5},${lonF + 0.5},${latF - 0.5}`;
+        params.bounded = 0;
+      }
 
       const response = await axios.get(this.searchURL, {
         params,
@@ -142,7 +256,7 @@ class GeocodingService {
 
       const rows = Array.isArray(response.data) ? response.data : [];
 
-      const results = rows.map((row) => ({
+      let results = rows.map((row) => ({
         display_name: row.display_name,
         address: this.normalizeAddress(row.address || {}),
         lat: String(row.lat),
@@ -152,7 +266,24 @@ class GeocodingService {
         importance: typeof row.importance === 'number' ? row.importance : 0,
       }));
 
-      geocodeCache.set(cacheKey, results);
+      // Nominatim can miss buildings/businesses by name. Fall back to Photon
+      // (same OSM data, better POI ranking) when no results are returned.
+      if (results.length === 0) {
+        results = await this.searchPhoton({
+          query: trimmedQuery,
+          countryCode,
+          limit: resultLimit,
+          lat,
+          lon,
+        });
+      }
+
+      // Only cache non-empty results. An empty result might be a transient
+      // miss (no location bias yet, Nominatim blip) and shouldn't block
+      // future attempts for the same query.
+      if (results.length > 0) {
+        geocodeCache.set(cacheKey, results);
+      }
       return results;
     } catch (error) {
       logger.error('Nominatim search failed', {

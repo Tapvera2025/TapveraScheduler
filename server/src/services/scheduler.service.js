@@ -333,41 +333,31 @@ class SchedulerService {
       .populate('siteId', 'siteLocationName shortName')
       .lean();
 
-    // Send shift assignment email to employee (if employee is assigned)
+    // Fire-and-forget: SMTP must not block the shift-create response.
     if (populatedShift.employeeId && populatedShift.employeeId.email) {
-      try {
-        // Get company for timezone
-        const company = await Company.findById(companyId);
-        const timezone = company?.timezone || 'Australia/Sydney';
-
-        // Format dates using company timezone
-        const shiftDateTime = DateTime.fromJSDate(populatedShift.date).setZone(timezone);
-        const startDateTime = DateTime.fromJSDate(populatedShift.startTime).setZone(timezone);
-        const endDateTime = DateTime.fromJSDate(populatedShift.endTime).setZone(timezone);
-
-        await emailService.sendShiftAssignmentEmail({
-          to: populatedShift.employeeId.email,
-          employeeName: `${populatedShift.employeeId.firstName} ${populatedShift.employeeId.lastName}`,
-          siteName: populatedShift.siteId.siteLocationName,
-          shiftDate: shiftDateTime.toFormat('dd/MM/yyyy'),
-          startTime: startDateTime.toFormat('HH:mm'),
-          endTime: endDateTime.toFormat('HH:mm'),
-          shiftType: populatedShift.shiftType,
-          notes: populatedShift.notes || '',
-        });
-
-        logger.info('Shift assignment email sent successfully', {
-          shiftId: shift._id,
-          employeeEmail: populatedShift.employeeId.email,
-        });
-      } catch (emailError) {
-        // Log error but don't fail shift creation if email fails
-        logger.error('Failed to send shift assignment email', {
-          shiftId: shift._id,
-          employeeEmail: populatedShift.employeeId.email,
-          error: emailError.message,
-        });
-      }
+      const _ps = populatedShift;
+      Company.findById(companyId)
+        .then((company) => {
+          const tz = company?.timezone || 'Australia/Sydney';
+          return emailService.sendShiftAssignmentEmail({
+            to: _ps.employeeId.email,
+            employeeName: `${_ps.employeeId.firstName} ${_ps.employeeId.lastName}`,
+            siteName: _ps.siteId.siteLocationName,
+            shiftDate: DateTime.fromJSDate(_ps.date).setZone(tz).toFormat('dd/MM/yyyy'),
+            startTime: DateTime.fromJSDate(_ps.startTime).setZone(tz).toFormat('HH:mm'),
+            endTime: DateTime.fromJSDate(_ps.endTime).setZone(tz).toFormat('HH:mm'),
+            shiftType: _ps.shiftType,
+            notes: _ps.notes || '',
+          });
+        })
+        .then(() => logger.info('Shift assignment email sent', { shiftId: shift._id }))
+        .catch((emailError) =>
+          logger.error('Failed to send shift assignment email', {
+            shiftId: shift._id,
+            employeeEmail: _ps.employeeId.email,
+            error: emailError.message,
+          })
+        );
     }
 
     // Transform _id to id for frontend compatibility
@@ -488,42 +478,32 @@ class SchedulerService {
       .populate('siteId', 'siteLocationName shortName')
       .lean();
 
-    // Send adhoc shift assignment email to employee (if employee is assigned)
+    // Fire-and-forget: SMTP must not block the adhoc-shift response.
     if (populatedShift.employeeId && populatedShift.employeeId.email) {
-      try {
-        // Get company for timezone
-        const company = await Company.findById(companyId);
-        const timezone = company?.timezone || 'Australia/Sydney';
-
-        // Format dates using company timezone
-        const shiftDateTime = DateTime.fromJSDate(populatedShift.date).setZone(timezone);
-        const startDateTime = DateTime.fromJSDate(populatedShift.startTime).setZone(timezone);
-        const endDateTime = DateTime.fromJSDate(populatedShift.endTime).setZone(timezone);
-
-        await emailService.sendShiftAssignmentEmail({
-          to: populatedShift.employeeId.email,
-          employeeName: `${populatedShift.employeeId.firstName} ${populatedShift.employeeId.lastName}`,
-          siteName: populatedShift.siteId.siteLocationName,
-          shiftDate: shiftDateTime.toFormat('dd/MM/yyyy'),
-          startTime: startDateTime.toFormat('HH:mm'),
-          endTime: endDateTime.toFormat('HH:mm'),
-          shiftType: populatedShift.shiftType,
-          notes: populatedShift.notes || '',
-          isAdhoc: true,
-        });
-
-        logger.info('Adhoc shift assignment email sent successfully', {
-          shiftId: shift._id,
-          employeeEmail: populatedShift.employeeId.email,
-        });
-      } catch (emailError) {
-        // Log error but don't fail shift creation if email fails
-        logger.error('Failed to send adhoc shift assignment email', {
-          shiftId: shift._id,
-          employeeEmail: populatedShift.employeeId.email,
-          error: emailError.message,
-        });
-      }
+      const _ps = populatedShift;
+      Company.findById(companyId)
+        .then((company) => {
+          const tz = company?.timezone || 'Australia/Sydney';
+          return emailService.sendShiftAssignmentEmail({
+            to: _ps.employeeId.email,
+            employeeName: `${_ps.employeeId.firstName} ${_ps.employeeId.lastName}`,
+            siteName: _ps.siteId.siteLocationName,
+            shiftDate: DateTime.fromJSDate(_ps.date).setZone(tz).toFormat('dd/MM/yyyy'),
+            startTime: DateTime.fromJSDate(_ps.startTime).setZone(tz).toFormat('HH:mm'),
+            endTime: DateTime.fromJSDate(_ps.endTime).setZone(tz).toFormat('HH:mm'),
+            shiftType: _ps.shiftType,
+            notes: _ps.notes || '',
+            isAdhoc: true,
+          });
+        })
+        .then(() => logger.info('Adhoc shift assignment email sent', { shiftId: shift._id }))
+        .catch((emailError) =>
+          logger.error('Failed to send adhoc shift assignment email', {
+            shiftId: shift._id,
+            employeeEmail: _ps.employeeId.email,
+            error: emailError.message,
+          })
+        );
     }
 
     // Transform _id to id for frontend compatibility
@@ -677,41 +657,31 @@ class SchedulerService {
       .populate('siteId', 'siteLocationName shortName')
       .lean();
 
-    // Send shift assignment email if employee was changed or assigned
+    // Fire-and-forget: SMTP must not block the shift-update response.
     if (employeeChanged && populatedShift.employeeId && populatedShift.employeeId.email) {
-      try {
-        // Get company for timezone
-        const company = await Company.findById(companyId);
-        const timezone = company?.timezone || 'Australia/Sydney';
-
-        // Format dates using company timezone
-        const shiftDateTime = DateTime.fromJSDate(populatedShift.date).setZone(timezone);
-        const startDateTime = DateTime.fromJSDate(populatedShift.startTime).setZone(timezone);
-        const endDateTime = DateTime.fromJSDate(populatedShift.endTime).setZone(timezone);
-
-        await emailService.sendShiftAssignmentEmail({
-          to: populatedShift.employeeId.email,
-          employeeName: `${populatedShift.employeeId.firstName} ${populatedShift.employeeId.lastName}`,
-          siteName: populatedShift.siteId.siteLocationName,
-          shiftDate: shiftDateTime.toFormat('dd/MM/yyyy'),
-          startTime: startDateTime.toFormat('HH:mm'),
-          endTime: endDateTime.toFormat('HH:mm'),
-          shiftType: populatedShift.shiftType,
-          notes: populatedShift.notes || '',
-        });
-
-        logger.info('Shift assignment email sent successfully (updated)', {
-          shiftId: shift._id,
-          employeeEmail: populatedShift.employeeId.email,
-        });
-      } catch (emailError) {
-        // Log error but don't fail shift update if email fails
-        logger.error('Failed to send shift assignment email (updated)', {
-          shiftId: shift._id,
-          employeeEmail: populatedShift.employeeId.email,
-          error: emailError.message,
-        });
-      }
+      const _ps = populatedShift;
+      Company.findById(companyId)
+        .then((company) => {
+          const tz = company?.timezone || 'Australia/Sydney';
+          return emailService.sendShiftAssignmentEmail({
+            to: _ps.employeeId.email,
+            employeeName: `${_ps.employeeId.firstName} ${_ps.employeeId.lastName}`,
+            siteName: _ps.siteId.siteLocationName,
+            shiftDate: DateTime.fromJSDate(_ps.date).setZone(tz).toFormat('dd/MM/yyyy'),
+            startTime: DateTime.fromJSDate(_ps.startTime).setZone(tz).toFormat('HH:mm'),
+            endTime: DateTime.fromJSDate(_ps.endTime).setZone(tz).toFormat('HH:mm'),
+            shiftType: _ps.shiftType,
+            notes: _ps.notes || '',
+          });
+        })
+        .then(() => logger.info('Shift assignment email sent (updated)', { shiftId: shift._id }))
+        .catch((emailError) =>
+          logger.error('Failed to send shift assignment email (updated)', {
+            shiftId: shift._id,
+            employeeEmail: _ps.employeeId.email,
+            error: emailError.message,
+          })
+        );
     }
 
     // Transform _id to id for frontend compatibility

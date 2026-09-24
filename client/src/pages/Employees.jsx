@@ -14,9 +14,26 @@ import AddEmployeeModal from "../components/employees/AddEmployeeModal";
 import { useFullscreen } from "../hooks/useFullscreen";
 import { useTableSort } from "../hooks/useTableSort";
 
+function formatLastLogin(dateStr) {
+  if (!dateStr) return "Never";
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
 export default function Employees() {
   const pageRef = useRef(null);
   const { isFullscreen, toggleFullscreen, isSupported } = useFullscreen(pageRef);
+  const userRole = localStorage.getItem("userRole");
+  const isAdmin = userRole === "admin";
 
   const [showInactive, setShowInactive] = useState(false);
   const [search, setSearch] = useState("");
@@ -155,16 +172,17 @@ export default function Employees() {
         </div>
         <div className="data-table-surface rounded-xl overflow-hidden">
           <div className="directory-list-heading"><span>{pagination.total} employees</span><label><input type="checkbox" aria-label="Select all employees on this page" checked={employees.length > 0 && employees.every(e => selectedEmployees.includes(e.id))} onChange={toggleSelectAll} />{selectedEmployees.length ? `${selectedEmployees.length} selected` : "Select page"}</label></div>
-          <MobileTableSort columns={[["firstName","Name"],["email","Email"],["phone","Mobile"],["isActive","Status"],["position","Position"],["department","Department"]]} sortConfig={sortConfig} onSort={requestSort} />
+          <MobileTableSort columns={[["firstName","Name"],["email","Email"],["phone","Mobile"],["isActive","Status"],["position","Position"],["department","Department"],...(isAdmin ? [["lastLoginAt","Last Login"]] : [])]} sortConfig={sortConfig} onSort={requestSort} />
           <div className="overflow-x-auto">
             <ResponsiveTable aria-label="Employees">
               <thead role="rowgroup"><tr role="row">
                 <th scope="col" className="sr-only">Select</th>
                 {[['Name','firstName'],['Email','email'],['Mobile','phone'],['Status','isActive'],['Position','position'],['Department','department']].map(([label,key]) => <th key={key} scope="col" className="px-4 py-3"><SortableHeader label={label} sortKey={key} onSort={requestSort} sortDirection={getSortIndicator(key)} /></th>)}
+                {isAdmin && <th scope="col" className="px-4 py-3"><SortableHeader label="Last Login" sortKey="lastLoginAt" onSort={requestSort} sortDirection={getSortIndicator("lastLoginAt")} /></th>}
                 <th scope="col" className="px-4 py-3">Actions</th>
               </tr></thead>
               <tbody role="rowgroup">
-                {loading ? <tr role="row"><td role="cell" colSpan={8} className="p-10 text-center text-foreground-muted">Loading employees…</td></tr> : sortedEmployees.length === 0 ? <tr role="row"><td role="cell" colSpan={8} className="p-10 text-center text-foreground-muted">No employees found. Try another search or add your first team member.</td></tr> : sortedEmployees.map(employee => <tr role="row" key={employee.id} className="border-b border-[hsl(var(--color-border))] hover:bg-[hsl(var(--color-surface))]">
+                {loading ? <tr role="row"><td role="cell" colSpan={isAdmin ? 9 : 8} className="p-10 text-center text-foreground-muted">Loading employees…</td></tr> : sortedEmployees.length === 0 ? <tr role="row"><td role="cell" colSpan={isAdmin ? 9 : 8} className="p-10 text-center text-foreground-muted">No employees found. Try another search or add your first team member.</td></tr> : sortedEmployees.map(employee => <tr role="row" key={employee.id} className="border-b border-[hsl(var(--color-border))] hover:bg-[hsl(var(--color-surface))]">
                   <td role="cell" data-field="select" className="px-3"><input type="checkbox" aria-label={`Select ${employee.firstName} ${employee.lastName}`} checked={selectedEmployees.includes(employee.id)} onChange={() => toggleSelectEmployee(employee.id)} /></td>
                   <td role="cell" data-label="Employee" data-field="title" className="px-4 py-4"><button className="record-link" onClick={() => handleEdit(employee)}>{employee.firstName} {employee.lastName}</button></td>
                   <td role="cell" data-label="Email" data-field="wide" className="px-4 py-4">{employee.email ? <a href={`mailto:${employee.email}`}>{employee.email}</a> : '—'}</td>
@@ -172,6 +190,7 @@ export default function Employees() {
                   <td role="cell" data-label="Status" data-field="status" className="px-4 py-4"><span className={`attendance-status ${employee.isActive ? 'badge-success' : 'badge-neutral'}`}>{employee.isActive ? 'Active' : 'Inactive'}</span></td>
                   <td role="cell" data-label="Position" className="px-4 py-4">{employee.position || '—'}</td>
                   <td role="cell" data-label="Department" className="px-4 py-4">{employee.department || '—'}</td>
+                  {isAdmin && <td role="cell" data-label="Last Login" className="px-4 py-4 text-sm text-[hsl(var(--color-foreground-secondary))]" title={employee.lastLoginAt ? new Date(employee.lastLoginAt).toLocaleString() : undefined}>{formatLastLogin(employee.lastLoginAt)}</td>}
                   <td role="cell" data-label="Actions" data-field="actions" className="px-4 py-4"><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => handleEdit(employee)} aria-label={`Edit ${employee.firstName}`}><Edit size={14} /><span>Edit</span></Button><Button size="sm" variant="ghost" onClick={() => handleDelete(employee.id)} aria-label={`Delete ${employee.firstName}`} className="text-[hsl(var(--color-error))]"><Trash2 size={14} /><span className="mobile-action-label">Delete</span></Button></div></td>
                 </tr>)}
               </tbody>

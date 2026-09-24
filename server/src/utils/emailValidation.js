@@ -70,11 +70,20 @@ const isDisposable = (email) => {
 
 // ─── MX record check ───────────────────────────────────────────────────────
 
+// Domain-level MX results cached for 1 hour so repeated creates/updates for
+// the same company domain don't each pay a full DNS round-trip.
+const _mxCache = new Map(); // domain → { result, expiresAt }
+const MX_CACHE_TTL_MS = 60 * 60 * 1000;
+
 const checkDomainMx = async (email, { timeoutMs = 3000 } = {}) => {
   const f = validateEmailFormat(email);
   if (!f.ok) return f;
 
+  const cached = _mxCache.get(f.domain);
+  if (cached && cached.expiresAt > Date.now()) return cached.result;
+
   let timer;
+  let result;
   try {
     const records = await Promise.race([
       dns.resolveMx(f.domain),
@@ -83,13 +92,14 @@ const checkDomainMx = async (email, { timeoutMs = 3000 } = {}) => {
       }),
     ]);
     if (!records || records.length === 0) {
-      return {
+      result = {
         ok: false,
         code: 'NO_MX',
         message: `The domain ${f.domain} does not accept email`,
       };
+    } else {
+      result = { ok: true };
     }
-    return { ok: true };
   } catch (err) {
     // Distinguish "the domain cannot receive mail" from "we couldn't check".
     //   ENOTFOUND — domain does not exist
@@ -98,7 +108,7 @@ const checkDomainMx = async (email, { timeoutMs = 3000 } = {}) => {
     // Anything else (timeout, network) is soft: DNS blips must not stop
     // admins creating accounts.
     const hard = err.code === 'ENOTFOUND' || err.code === 'ENODATA';
-    return {
+    result = {
       ok: false,
       code: hard ? 'NO_MX' : 'MX_LOOKUP_FAILED',
       message: hard
@@ -109,6 +119,13 @@ const checkDomainMx = async (email, { timeoutMs = 3000 } = {}) => {
   } finally {
     if (timer) clearTimeout(timer);
   }
+
+  // Cache definitive results (ok or hard-NO_MX). Soft failures are not cached
+  // so a transient DNS blip doesn't permanently block a valid domain.
+  if (result.ok || result.code === 'NO_MX') {
+    _mxCache.set(f.domain, { result, expiresAt: Date.now() + MX_CACHE_TTL_MS });
+  }
+  return result;
 };
 
 // ─── Cross-collection uniqueness ──────────────────────────────────────────
@@ -142,9 +159,9 @@ const checkAccountEmailUnique = async ({
       message: 'An account with this email already exists in this organisation',
     };
   }
-  // Employees may share an email with their own User when the two records are
-  // linked (userId set) — that is legitimate, not a collision.
-  if (existingEmployee && !excludeUserId && !existingEmployee.userId) {
+  // The caller's own records are excluded by ID above. Any remaining employee
+  // is a collision, regardless of whether either employee has a linked login.
+  if (existingEmployee) {
     return {
       ok: false,
       code: 'EMAIL_IN_USE',

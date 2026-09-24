@@ -19,7 +19,6 @@ const {
   getManagerViewValidation,
   exportCSVValidation,
 } = require('../validators/clockInOut.validator');
-
 // All routes require authentication
 router.use(auth);
 
@@ -79,6 +78,13 @@ router.get('/status', ...getStatusValidation, validate, clockInOutController.get
  * @access Private (Authenticated employees)
  */
 router.get('/history', ...getHistoryValidation, validate, clockInOutController.getMyHistory);
+
+/**
+ * Live attendance status (all currently clocked-in employees)
+ * @route GET /api/v1/clock/live
+ * @access Private (ADMIN, MANAGER only)
+ */
+router.get('/live', authorize('ADMIN', 'MANAGER'), clockInOutController.getLiveStatus);
 
 /**
  * Get Manager View (All Employees)

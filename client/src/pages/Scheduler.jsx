@@ -889,7 +889,7 @@ export default function Scheduler() {
                   const siteData = shift?.siteId || shift?.site;
                   return {
                     id: siteId,
-                    name: typeof siteData === "object" ? (siteData.siteLocationName || siteData.shortName || "Unknown Site") : "Unknown Site",
+                    name: typeof siteData === "object" ? (siteData.siteLocationName || siteData.shortName || "Unknown Site") : (typeof siteData === "string" ? siteData : "Unknown Site"),
                     shortName: typeof siteData === "object" ? siteData.shortName : null
                   };
                 });
@@ -1094,7 +1094,7 @@ export default function Scheduler() {
                                   <div className="text-[hsl(var(--color-foreground-secondary))] flex items-center gap-0.5 sm:gap-1 mt-0.5 text-[10px] sm:text-xs">
                                     <MapPin className="h-2 w-2 sm:h-3 sm:w-3" />
                                     <span className="truncate">
-                                      {shift.siteId?.shortName || shift.site?.shortName || "Unknown Site"}
+                                      {shift.siteId?.shortName || shift.siteId?.siteLocationName || shift.site?.shortName || shift.site?.siteLocationName || "Unknown Site"}
                                     </span>
                                   </div>
                                   {weather && (
@@ -1214,7 +1214,7 @@ export default function Scheduler() {
                                     <div className="text-[hsl(var(--color-foreground-secondary))] flex items-center gap-0.5 sm:gap-1 mt-0.5 text-[10px] sm:text-xs">
                                       <MapPin className="h-2 w-2 sm:h-3 sm:w-3" />
                                       <span className="truncate">
-                                        {shift.siteId?.shortName || shift.site?.shortName || "Unknown Site"}
+                                        {shift.siteId?.shortName || shift.siteId?.siteLocationName || shift.site?.shortName || shift.site?.siteLocationName || "Unknown Site"}
                                       </span>
                                     </div>
                                     {weather && (

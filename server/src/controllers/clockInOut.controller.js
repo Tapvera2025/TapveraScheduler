@@ -69,6 +69,11 @@ const clockIn = asyncHandler(async (req, res) => {
     console.error('Failed to send clock-in notification:', error);
   }
 
+  // Notify live status listeners with the full record
+  try {
+    socketService.emitAttendanceUpdate(req.user.companyId, 'CLOCK_IN', timeRecord);
+  } catch {}
+
   res.status(201).json({
     success: true,
     message: 'Clocked in successfully',
@@ -137,6 +142,11 @@ const clockOut = asyncHandler(async (req, res) => {
     // Log error but don't fail the request
     console.error('Failed to send clock-out notification:', error);
   }
+
+  // Notify live status listeners with the full record
+  try {
+    socketService.emitAttendanceUpdate(req.user.companyId, 'CLOCK_OUT', timeRecord);
+  } catch {}
 
   res.json({
     success: true,
@@ -284,6 +294,20 @@ const exportCSV = asyncHandler(async (req, res) => {
   res.send(csvContent);
 });
 
+/**
+ * Get live attendance status (all currently clocked-in employees)
+ * @route GET /api/v1/clock/live
+ */
+const getLiveStatus = asyncHandler(async (req, res) => {
+  const { siteId } = req.query;
+  const context = {
+    companyId: req.user.companyId,
+    role: req.user.role,
+  };
+  const records = await clockInOutService.getLiveStatus(context, { siteId });
+  res.json({ success: true, data: records });
+});
+
 const startBreak = asyncHandler(async (req, res) => {
   const { employeeId } = req.body;
   const context = { companyId: req.user.companyId, userId: req.user.userId, role: req.user.role };
@@ -294,6 +318,7 @@ const startBreak = asyncHandler(async (req, res) => {
     const empName = emp ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim() : 'Employee';
     const siteName = timeRecord.siteId?.siteLocationName || timeRecord.siteId?.shortName || 'site';
     socketService.notifyBreakStarted({ companyId: req.user.companyId, employeeName: empName, siteName });
+    socketService.emitAttendanceUpdate(req.user.companyId, 'BREAK_START', timeRecord);
   } catch {}
 });
 
@@ -307,6 +332,7 @@ const endBreak = asyncHandler(async (req, res) => {
     const empName = emp ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim() : 'Employee';
     const siteName = timeRecord.siteId?.siteLocationName || timeRecord.siteId?.shortName || 'site';
     socketService.notifyBreakEnded({ companyId: req.user.companyId, employeeName: empName, siteName });
+    socketService.emitAttendanceUpdate(req.user.companyId, 'BREAK_END', timeRecord);
   } catch {}
 });
 
@@ -314,6 +340,7 @@ module.exports = {
   clockIn,
   clockOut,
   getCurrentStatus,
+  getLiveStatus,
   getMyHistory,
   getManagerView,
   exportCSV,

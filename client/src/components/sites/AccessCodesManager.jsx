@@ -10,21 +10,24 @@ import toast from "react-hot-toast";
 /**
  * AccessCodesManager
  *
- * Full list + add + delete for a site's access codes. Live against the API
- * (needs an existing site id). For the "brand-new site" flow (no id yet),
- * the parent should render a simpler placeholder — codes only make sense
- * after the site is saved so the server has a siteId to attach them to.
+ * Full list + add + delete for a site's access codes.
  *
  * Props:
- *   siteId (string, required) — existing site's id
+ *   siteId (string) — existing site's id; when present, reads/writes via API
+ *   pendingCodes (array) — controlled list for the "new site" flow (no siteId)
+ *   onCodesChange (fn) — called with updated list whenever codes change (pending mode)
  */
-export default function AccessCodesManager({ siteId }) {
-  const [codes, setCodes] = useState([]);
+export default function AccessCodesManager({ siteId, pendingCodes, onCodesChange }) {
+  const isPending = !siteId && typeof onCodesChange === "function";
+
+  const [liveCodes, setLiveCodes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [revealed, setRevealed] = useState(() => new Set());
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showNewCode, setShowNewCode] = useState(false);
+
+  const codes = isPending ? (pendingCodes || []) : liveCodes;
 
   const [draft, setDraft] = useState({
     codeName: "",
@@ -46,19 +49,19 @@ export default function AccessCodesManager({ siteId }) {
     });
 
   const load = useCallback(async () => {
-    if (!siteId) return;
+    if (!siteId || isPending) return;
     setLoading(true);
     try {
       const res = await siteApi.getAccessCodes(siteId);
       const list = res.data?.data || [];
-      setCodes(Array.isArray(list) ? list : []);
+      setLiveCodes(Array.isArray(list) ? list : []);
     } catch (err) {
       console.error("Failed to load access codes", err);
       toast.error(err.response?.data?.message || "Failed to load access codes");
     } finally {
       setLoading(false);
     }
-  }, [siteId]);
+  }, [siteId, isPending]);
 
   useEffect(() => {
     load();
@@ -82,6 +85,24 @@ export default function AccessCodesManager({ siteId }) {
       toast.error("Select when employees should see this code: 'When rostered' or 'After clocking in'");
       return;
     }
+
+    if (isPending) {
+      const newCode = {
+        id: `pending-${Date.now()}`,
+        codeName: draft.codeName.trim(),
+        accessCode: draft.accessCode.trim(),
+        notes: draft.notes.trim(),
+        visibleOnMobile: draft.visibleOnMobile,
+        whenRostered: draft.whenRostered,
+        afterClockingIn: draft.afterClockingIn,
+      };
+      onCodesChange([...(pendingCodes || []), newCode]);
+      resetDraft();
+      setShowNewCode(false);
+      setShowForm(false);
+      return;
+    }
+
     setSubmitting(true);
     try {
       await siteApi.addAccessCode(siteId, {
@@ -106,10 +127,16 @@ export default function AccessCodesManager({ siteId }) {
 
   const handleDelete = async (codeId) => {
     if (!window.confirm("Delete this access code? This cannot be undone.")) return;
+
+    if (isPending) {
+      onCodesChange((pendingCodes || []).filter((c) => (c.id || c._id) !== codeId));
+      return;
+    }
+
     try {
       await siteApi.deleteAccessCode(siteId, codeId);
       toast.success("Access code deleted");
-      setCodes((prev) => prev.filter((c) => (c.id || c._id) !== codeId));
+      setLiveCodes((prev) => prev.filter((c) => (c.id || c._id) !== codeId));
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to delete access code");
     }

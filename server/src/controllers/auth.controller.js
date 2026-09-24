@@ -53,7 +53,10 @@ const resolveModules = async (user) => {
  * @route POST /api/v1/auth/login
  */
 const login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  const { email: rawEmail, password } = req.body;
+  // Stored emails are always lowercase (User schema: lowercase: true).
+  // Normalise here so employees who type "John@Example.com" still sign in.
+  const email = (rawEmail || '').trim().toLowerCase();
 
   // 1. Find user by email (include password field)
   //

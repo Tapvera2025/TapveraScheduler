@@ -67,6 +67,7 @@ class EmployeeService {
     const [employees, total] = await Promise.all([
       Employee.find(query)
         .select('-tfn') // Never return TFN
+        .populate('userId', 'lastLoginAt')
         .sort({ [sortBy]: sortOrder })
         .skip(skip)
         .limit(parseInt(limit))
@@ -77,7 +78,8 @@ class EmployeeService {
     // Transform _id to id for frontend compatibility
     const transformedEmployees = employees.map(emp => ({
       ...emp,
-      id: emp._id.toString()
+      id: emp._id.toString(),
+      lastLoginAt: emp.userId?.lastLoginAt ?? null,
     }));
 
     return {
@@ -295,39 +297,28 @@ class EmployeeService {
       createdBy: userId,
     });
 
-    // Send welcome email if a new user account was created AND sendInvitation is true
+    // Send welcome email if a new user account was created AND sendInvitation is true.
+    // Fire-and-forget: SMTP delivery must not block the HTTP response.
     if (shouldSendEmail && plainPassword && data.sendInvitation !== false) {
-      try {
-        // Get company name for email
-        const company = await Company.findById(companyId);
-        const companyName = company?.name || 'Your Company';
-
-        await emailService.sendWelcomeEmail({
-          to: data.email,
-          name: `${data.firstName} ${data.lastName}`,
-          email: data.email,
-          password: plainPassword,
-          role: 'USER',
-          companyName,
-        });
-
-        logger.info('Welcome email sent successfully to employee', {
-          employeeId: employee._id,
-          email: data.email,
-        });
-      } catch (emailError) {
-        // Log error but don't fail employee creation if email fails
-        logger.error('Failed to send welcome email to employee', {
-          employeeId: employee._id,
-          email: data.email,
-          error: emailError.message,
-        });
-      }
-    } else if (shouldSendEmail && plainPassword && data.sendInvitation === false) {
-      logger.info('Welcome email skipped - sendInvitation is false', {
-        employeeId: employee._id,
-        email: data.email,
-      });
+      Company.findById(companyId)
+        .then((company) =>
+          emailService.sendWelcomeEmail({
+            to: data.email,
+            name: `${data.firstName} ${data.lastName}`,
+            email: data.email,
+            password: plainPassword,
+            role: 'USER',
+            companyName: company?.name || 'Your Company',
+          })
+        )
+        .then(() => logger.info('Welcome email sent to employee', { employeeId: employee._id }))
+        .catch((emailError) =>
+          logger.error('Failed to send welcome email to employee', {
+            employeeId: employee._id,
+            email: data.email,
+            error: emailError.message,
+          })
+        );
     }
 
     // Remove TFN from response
@@ -350,6 +341,15 @@ class EmployeeService {
    */
   async updateEmployee(context, employeeId, data) {
     const { companyId, userId } = context;
+    // Login fields belong to User, never to the employee profile.
+    const { password, sendInvitation = true, ...profileData } = data;
+    data = profileData;
+
+    if (password && (typeof password !== 'string' || password.length < 8)) {
+      const error = new Error('Password must be at least 8 characters');
+      error.statusCode = 400;
+      throw error;
+    }
 
     if (!mongoose.Types.ObjectId.isValid(employeeId)) {
       const error = new Error('Invalid employee ID');
@@ -417,14 +417,37 @@ class EmployeeService {
       }
     }
 
-    // Same shared validator used on create. On update, exclude this employee
-    // from the uniqueness sweep so re-saving the same email is not flagged.
-    if (data.email) {
+    // Exclude this employee and its linked account, which legitimately share
+    // an email. Any supplied replacement userId has been validated above.
+    let linkedUserId = data.userId === undefined ? employee.userId : data.userId;
+
+    // Normalise the incoming email early so we can accurately detect whether
+    // it actually changed.  Only run the full uniqueness check (format +
+    // disposable + MX + cross-collection) when the address is genuinely new;
+    // re-validating an unchanged email against itself would always find the
+    // existing records and produce a false "already in use" rejection.
+    const incomingEmail = data.email ? data.email.trim().toLowerCase() : null;
+    const emailIsChanging = incomingEmail !== null && incomingEmail !== (employee.email || '');
+
+    // When the employee has no login yet but a password is being set, look for
+    // an existing User with this email so we can link and update in place
+    // rather than block (or create a duplicate).  This handles the case where a
+    // previous save partially succeeded – User created but employee.userId not
+    // yet written – leaving an "orphaned" User record.
+    let orphanedUser = null;
+    if (!linkedUserId && password) {
+      const emailToSearch = incomingEmail || (employee.email || '').trim().toLowerCase();
+      orphanedUser = await User.findOne({ email: emailToSearch, companyId });
+      if (orphanedUser) linkedUserId = orphanedUser._id;
+    }
+
+    if (emailIsChanging || (password && !linkedUserId)) {
       const { validateAccountEmail } = require('../utils/emailValidation');
       const emailCheck = await validateAccountEmail({
-        email: data.email,
+        email: incomingEmail || employee.email,
         companyId,
         excludeEmployeeId: employeeId,
+        excludeUserId: linkedUserId,
       });
       if (!emailCheck.ok) {
         const error = new Error(emailCheck.message);
@@ -433,6 +456,9 @@ class EmployeeService {
         throw error;
       }
       data.email = emailCheck.email;
+    } else if (incomingEmail) {
+      // Email unchanged — just carry the normalised form forward.
+      data.email = incomingEmail;
     }
 
     // Check if updating employee number, ensure no duplicates within company
@@ -458,63 +484,79 @@ class EmployeeService {
 
     // Check if email is being changed
     const emailChanged = data.email && data.email !== employee.email;
-    const oldEmail = employee.email;
 
     // Update employee
     Object.assign(employee, data);
     employee.updatedBy = userId;
 
-    await employee.save();
+    // Validate the profile before changing credentials. Account persistence
+    // errors must fail the request rather than be treated as email failures.
+    await employee.validate();
 
-    // If email changed and employee has a linked user account, update user and send credentials
-    if (emailChanged && employee.userId) {
-      try {
-        // Find the linked user account
-        const user = await User.findOne({
-          _id: employee.userId,
+    let loginUser;
+    let plainPassword;
+    if (employee.userId && (password || emailChanged)) {
+      loginUser = await User.findOne({ _id: employee.userId, companyId });
+
+      if (!loginUser) {
+        const error = new Error('Linked user account not found');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      // Keep the existing temporary-password flow for email-only changes,
+      // but always use an explicitly supplied password when there is one.
+      plainPassword = password || generateTempPassword();
+      loginUser.email = employee.email;
+      loginUser.password = plainPassword;
+      loginUser.updatedBy = userId;
+      await loginUser.save(); // User's pre-save hook hashes the password.
+    } else if (password) {
+      plainPassword = password;
+      if (orphanedUser) {
+        // Re-use the existing account rather than creating a duplicate.
+        loginUser = orphanedUser;
+        loginUser.email = employee.email;
+        loginUser.password = plainPassword;
+        loginUser.updatedBy = userId;
+        await loginUser.save();
+      } else {
+        loginUser = await User.create({
+          email: employee.email,
+          password: plainPassword,
+          name: `${employee.firstName} ${employee.lastName}`,
+          role: 'USER',
           companyId,
-        });
-
-        if (user) {
-          // Generate new temporary password
-          const newPassword = generateTempPassword();
-
-          // Update user's email and password
-          user.email = data.email;
-          user.password = newPassword;
-          user.passwordChangedAt = new Date();
-          user.updatedBy = userId;
-
-          await user.save();
-
-          // Get company name for email
-          const company = await Company.findById(companyId);
-          const companyName = company?.name || 'Your Company';
-
-          // Send credentials to new email
-          await emailService.sendWelcomeEmail({
-            to: data.email,
-            name: `${employee.firstName} ${employee.lastName}`,
-            email: data.email,
-            password: newPassword,
-            role: user.role,
-            companyName,
-          });
-
-          logger.info('Email changed - credentials sent to new email', {
-            employeeId: employee._id,
-            oldEmail,
-            newEmail: data.email,
-          });
-        }
-      } catch (emailError) {
-        // Log error but don't fail employee update if email fails
-        logger.error('Failed to send credentials after email change', {
-          employeeId: employee._id,
-          newEmail: data.email,
-          error: emailError.message,
+          createdBy: userId,
         });
       }
+      employee.userId = loginUser._id;
+    }
+
+    await employee.save();
+
+    // Fire-and-forget: credentials are already saved, SMTP delivery must not
+    // block the HTTP response.
+    if (loginUser && plainPassword && sendInvitation !== false) {
+      const _role = loginUser.role;
+      Company.findById(companyId)
+        .then((company) =>
+          emailService.sendWelcomeEmail({
+            to: employee.email,
+            name: `${employee.firstName} ${employee.lastName}`,
+            email: employee.email,
+            password: plainPassword,
+            role: _role,
+            companyName: company?.name || 'Your Company',
+          })
+        )
+        .then(() => logger.info('Credentials sent after employee update', { employeeId: employee._id }))
+        .catch((emailError) =>
+          logger.error('Failed to send credentials after employee update', {
+            employeeId: employee._id,
+            error: emailError.message,
+          })
+        );
     }
 
     // Remove TFN from response

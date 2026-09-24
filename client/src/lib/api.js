@@ -170,6 +170,9 @@ export const clockApi = {
   startBreak: (employeeId) => api.post('/clock/break/start', { employeeId }),
   endBreak: (employeeId) => api.post('/clock/break/end', { employeeId }),
 
+  getLiveStatus: (siteId = null) =>
+    api.get('/clock/live', { params: siteId ? { siteId } : {} }),
+
   getMyHistory: (employeeId, params = {}) => api.get('/clock/history', {
     params: { employeeId, ...params }
   }),
@@ -273,8 +276,15 @@ export const agentApi = {
 
 // Geocoding API endpoints
 export const geocodingApi = {
-  search: (query, countryCode = 'au', limit = 5) =>
-    api.get('/geocoding/search', { params: { q: query, countryCode, limit } }),
+  search: (query, countryCode = 'au', limit = 5, lat = null, lon = null) =>
+    api.get('/geocoding/search', {
+      params: {
+        q: query,
+        countryCode,
+        limit,
+        ...(lat != null && lon != null ? { lat, lon } : {}),
+      },
+    }),
   reverse: (lat, lon) =>
     api.get('/geocoding/reverse', { params: { lat, lon } }),
 };

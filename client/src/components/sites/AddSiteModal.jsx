@@ -34,6 +34,8 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
   const [errors, setErrors] = useState({});
   const [clients, setClients] = useState(staticClients);
 
+  const [pendingCodes, setPendingCodes] = useState([]);
+
   // Map / geocoding state
   const [showWarning, setShowWarning] = useState(false);
   const [warningMessage, setWarningMessage] = useState("");
@@ -125,12 +127,15 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
 
     const suburbValue =
       address.suburb || address.town || address.city || "";
+    const poiName = (address.name || "").trim();
     const roadValue = (address.road || address.street || "").trim();
 
-    // Address fallback: if Nominatim didn't return a road, use the first
-    // display_name segment that isn't the same as the suburb. Keeps the
-    // input from being blank on locality-level hits.
-    let addressToSet = roadValue;
+    // Compose the address line: named POI + street, or just street, or
+    // first meaningful display_name segment as a last resort.
+    let addressToSet = poiName
+      ? roadValue ? `${poiName}, ${roadValue}` : poiName
+      : roadValue;
+
     if (!addressToSet && displayName) {
       const parts = String(displayName)
         .split(",")
@@ -325,15 +330,31 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
 
       let response;
       if (site) {
-        // Update existing site
         response = await siteApi.update(site._id || site.id, payload);
       } else {
-        // Create new site
         response = await siteApi.create(payload);
+
+        // Save any access codes that were added before the site existed
+        const newSiteId = response.data?.data?._id || response.data?.data?.id;
+        if (newSiteId && pendingCodes.length > 0) {
+          for (const code of pendingCodes) {
+            try {
+              await siteApi.addAccessCode(newSiteId, {
+                codeName: code.codeName,
+                accessCode: code.accessCode,
+                notes: code.notes || undefined,
+                visibleOnMobile: code.visibleOnMobile,
+                whenRostered: code.whenRostered,
+                afterClockingIn: code.afterClockingIn,
+              });
+            } catch {
+              toast.error(`Failed to save access code "${code.codeName}"`);
+            }
+          }
+        }
       }
 
       onClose();
-      // Hand the saved site back so the caller can use it right away
       if (onSuccess) onSuccess(response.data?.data);
     } catch (err) {
       const apiErrors = err.response?.data?.errors;
@@ -558,6 +579,8 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
                           onChange={(e) =>
                             handleInputChange("address", e.target.value)
                           }
+                          biasLat={formData.latitude ? parseFloat(formData.latitude) : null}
+                          biasLon={formData.longitude ? parseFloat(formData.longitude) : null}
                           onSelect={(addressData) => {
                             // Auto-select timezone from state. AU states map
                             // to their zone; anything matching an Indian state
@@ -822,16 +845,10 @@ export default function AddSiteModal({ onClose, onSuccess, site = null }) {
                   site && (site.id || site._id) ? (
                     <AccessCodesManager siteId={site.id || site._id} />
                   ) : (
-                    <div className="p-6 text-sm text-[hsl(var(--color-foreground-secondary))] border border-dashed border-[hsl(var(--color-border))] rounded">
-                      <p className="mb-2 font-medium text-[hsl(var(--color-foreground))]">
-                        Save the site first
-                      </p>
-                      <p>
-                        Access codes attach to a saved site. Fill in the site
-                        details and click <strong>Save site</strong>, then
-                        re-open this site to add and manage its access codes.
-                      </p>
-                    </div>
+                    <AccessCodesManager
+                      pendingCodes={pendingCodes}
+                      onCodesChange={setPendingCodes}
+                    />
                   )
                 )}
               </div>

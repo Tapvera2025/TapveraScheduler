@@ -30,6 +30,7 @@ import ManagerTimeRecords from "./components/attendance/ManagerTimeRecords";
 import MyLeave from "./pages/user/MyLeave";
 import MyAdhoc from "./pages/user/MyAdhoc";
 import AdhocRequests from "./pages/AdhocRequests";
+import EmployeeCurrentStatus from "./pages/EmployeeCurrentStatus";
 import MasterOverview from "./pages/master/Overview";
 import Organisations from "./pages/master/Organisations";
 import CreateOrganisation from "./pages/master/CreateOrganisation";
@@ -72,6 +73,7 @@ function App() {
             {/* Always available */}
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="employees" element={<Employees />} />
+            <Route path="employees/current-status" element={<EmployeeCurrentStatus />} />
             <Route path="profile" element={<Profile />} />
             <Route path="change-password" element={<ChangePassword />} />
             <Route path="settings" element={<Settings />} />

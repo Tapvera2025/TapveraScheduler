@@ -29,7 +29,7 @@ const createSiteValidation = [
     .isLength({ max: 255 }).withMessage('Client must not exceed 255 characters'),
 
   body('flatBillingRate')
-    .optional()
+    .optional({ checkFalsy: true })
     .isDecimal().withMessage('Flat billing rate must be a valid decimal number')
     .custom(value => parseFloat(value) >= 0).withMessage('Flat billing rate must be non-negative'),
 
@@ -72,19 +72,19 @@ const createSiteValidation = [
     .trim(),
 
   body('latitude')
-    .optional()
+    .optional({ checkFalsy: true })
     .isDecimal().withMessage('Latitude must be a valid decimal number')
     .custom(value => parseFloat(value) >= -90 && parseFloat(value) <= 90)
     .withMessage('Latitude must be between -90 and 90'),
 
   body('longitude')
-    .optional()
+    .optional({ checkFalsy: true })
     .isDecimal().withMessage('Longitude must be a valid decimal number')
     .custom(value => parseFloat(value) >= -180 && parseFloat(value) <= 180)
     .withMessage('Longitude must be between -180 and 180'),
 
   body('geoFenceRadius')
-    .optional()
+    .optional({ checkFalsy: true })
     .isDecimal().withMessage('GeoFence radius must be a valid decimal number')
     .custom(value => parseFloat(value) >= 0).withMessage('GeoFence radius must be non-negative'),
 
@@ -109,7 +109,7 @@ const createSiteValidation = [
     .isLength({ max: 50 }).withMessage('Contact mobile must not exceed 50 characters'),
 
   body('contactEmail')
-    .optional()
+    .optional({ checkFalsy: true })
     .trim()
     .isEmail().withMessage('Contact email must be a valid email address'),
 

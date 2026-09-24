@@ -448,6 +448,16 @@ class SocketService {
     });
   }
 
+  /**
+   * Emit a full TimeRecord update to the live-status dashboard listeners.
+   * Managers subscribe to `managers:<companyId>` so they receive this
+   * automatically as soon as any clock/break event happens.
+   */
+  emitAttendanceUpdate(companyId, type, record) {
+    if (!this.io) return;
+    this.io.to(`managers:${companyId}`).emit('attendance-update', { type, record });
+  }
+
   notifyBreakStarted({ companyId, employeeName, siteName }) {
     if (!this.io) return;
     this.io.to(`managers:${companyId}`).emit('break-start', {
